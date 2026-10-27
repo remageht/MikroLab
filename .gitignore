@@ -6,3 +6,5 @@ obj/
 *.pdb
 *.log
 TestResults/
+publish/
+artifacts/

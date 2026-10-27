@@ -58,7 +58,7 @@ namespace MikroLab.Cli
                     return StateCommand(args);
                 case "version":
                 case "--version":
-                    Console.WriteLine("MikroLab.Cli 1.0.0");
+                    Console.WriteLine("MikroLab.Cli " + ProductVersion());
                     return 0;
                 default:
                     Console.Error.WriteLine("unknown command: " + args[0]);
@@ -441,6 +441,12 @@ namespace MikroLab.Cli
                 }
                 Console.WriteLine(address.ToString("X4") + "h  " + bytes + " |" + ascii + "|");
             }
+        }
+
+        private static string ProductVersion()
+        {
+            Version version = typeof(Program).Assembly.GetName().Version;
+            return version != null ? version.ToString(3) : "0.0.0";
         }
 
         private static void PrintHelp()
