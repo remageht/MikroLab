@@ -17,7 +17,7 @@ namespace MikroLab.App
             BackColor = AppTheme.Surface;
             ForeColor = AppTheme.Text;
             Font = AppTheme.UiFont;
-            ClientSize = new Size(600, 660);
+            ClientSize = new Size(600, 700);
 
             var title = new Label
             {
@@ -47,7 +47,7 @@ namespace MikroLab.App
                 WordWrap = false,
                 ScrollBars = RichTextBoxScrollBars.Vertical,
                 Location = new Point(26, 88),
-                Size = new Size(548, 350),
+                Size = new Size(548, 386),
                 Text =
                     "ГОРЯЧИЕ КЛАВИШИ\n" +
                     "F5 — пуск            F6 — пауза\n" +
@@ -55,8 +55,13 @@ namespace MikroLab.App
                     "F9 — точка останова в текущей строке\n" +
                     "Ctrl+R — сброс   Ctrl+1 / Ctrl+2 — студия / лаборатория\n" +
                     "Ctrl+N / Ctrl+O / Ctrl+S — новый / открыть / сохранить\n" +
+                    "Ctrl+I / Ctrl+E — импорт / экспорт Intel HEX\n" +
+                    "Ctrl+Shift+S / Ctrl+Shift+O — сохранить / загрузить состояние\n" +
+                    "Двойной клик по регистру — изменить значение\n" +
                     "Двойной клик в памяти — изменить байт\n" +
-                    "Клик по номеру строки — точка останова\n\n" +
+                    "Клик по номеру строки — точка останова\n" +
+                    "Меню «Файл» — программы, HEX и состояние машины\n" +
+                    "Скорость в шапке — от оригинала до максимума\n\n" +
                     "УСТРОЙСТВА\n" +
                     "OUT 01h — светодиоды (порт A)\n" +
                     "IN FAh — переключатели SA1…SA3 (порт B)\n" +
@@ -74,7 +79,7 @@ namespace MikroLab.App
                 Font = AppTheme.SmallFont,
                 ForeColor = AppTheme.TextDim,
                 AutoSize = true,
-                Location = new Point(26, 456)
+                Location = new Point(26, 492)
             };
 
             var close = new UiButton
@@ -83,7 +88,7 @@ namespace MikroLab.App
                 Kind = UiButtonKind.Primary,
                 Width = 110,
                 Height = 34,
-                Location = new Point(464, 604)
+                Location = new Point(464, 640)
             };
             close.Click += (sender, args) => Close();
 

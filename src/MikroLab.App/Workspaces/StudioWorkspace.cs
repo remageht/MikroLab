@@ -274,6 +274,7 @@ namespace MikroLab.App.Workspaces
 
             _inspectorContent = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.Surface };
             _registers = new RegisterPanel { Dock = DockStyle.Fill };
+            _registers.RegisterEdited += OnRegisterEdited;
             _memory = new MemoryPanel { Dock = DockStyle.Fill };
             _memory.ByteWriteRequested += OnMemoryWrite;
             _devices = new DevicesPanel { Dock = DockStyle.Fill };
@@ -441,6 +442,15 @@ namespace MikroLab.App.Workspaces
 
             _host.WithMachine(machine => machine.Memory.WriteByte(address, value));
             _output.Log("Память · " + address.ToString("X4") + "h ← " + value.ToString("X2") + "h");
+        }
+
+        private void OnRegisterEdited(string name, ushort value)
+        {
+            if (!_host.SetRegister(name, value)) return;
+
+            UpdateExecutionLine(_host.CurrentPc());
+            _registers.UpdateSnapshot(_host.Snapshot());
+            UpdateButtons();
         }
 
         private void OnTumblerChanged(int index, bool value)

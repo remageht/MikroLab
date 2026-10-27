@@ -443,13 +443,13 @@ namespace MikroLab.App.Controls
 
             _followPc = new ToggleSwitch
             {
-                Text = "Следовать за PC",
+                Text = "Следить за PC",
                 Checked = true,
-                Width = 184,
+                Width = 150,
                 Height = 28,
                 ForeColor = AppTheme.TextMuted,
                 Font = AppTheme.SmallFont,
-                Location = new Point(228, 7)
+                Location = new Point(226, 7)
             };
             _followPc.CheckedChanged += (sender, args) => _hex.FollowPc = _followPc.Checked;
 

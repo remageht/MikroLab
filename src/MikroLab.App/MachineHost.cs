@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MikroLab.Core.Assembler;
 using MikroLab.Core.Cpu;
 using MikroLab.Core.Devices;
+using MikroLab.Core.Formats;
 using MikroLab.Core.Machine;
 using MikroLab.Core.Memory;
 
@@ -31,6 +33,7 @@ namespace MikroLab.App
         private readonly HashSet<int> _breakpointLines = new HashSet<int>();
         private readonly Dictionary<int, ushort> _lineAddresses = new Dictionary<int, ushort>();
         private readonly List<AddressRange> _ranges = new List<AddressRange>();
+        private ushort _entryPoint = 0x8000;
         private bool _disposed;
 
         public MachineHost()
@@ -61,7 +64,7 @@ namespace MikroLab.App
         public bool IsProgramLoaded { get; private set; }
         public AssembleResult LastAssembly { get; private set; }
         public string LastSource { get; private set; } = string.Empty;
-        public ushort EntryPoint => LastAssembly != null ? LastAssembly.StartAddress : (ushort)0x8000;
+        public ushort EntryPoint => _entryPoint;
 
         public event Action<string, LogLevel> Output;
 
@@ -113,6 +116,7 @@ namespace MikroLab.App
 
             BuildAddressMap(result);
             ApplyBreakpoints();
+            _entryPoint = result.StartAddress;
             IsProgramLoaded = true;
 
             int bytes = result.Chunks.Sum(chunk => chunk.Data.Length);
@@ -130,6 +134,180 @@ namespace MikroLab.App
         {
             LastSource = source ?? string.Empty;
             Assemble(LastSource);
+        }
+
+        // ------------------------------------------------------------------ Intel HEX / state files
+
+        /// <summary>
+        /// Replaces memory with an Intel HEX image, resets devices and points
+        /// the CPU at the start address (8000h when the file has none).
+        /// </summary>
+        public IntelHexImage ImportHex(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            IntelHexImage image = IntelHex.Load(path);
+            if (image.ByteCount == 0)
+            {
+                throw new InvalidDataException("Файл Intel HEX не содержит данных.");
+            }
+
+            ushort start = image.StartAddress ?? 0x8000;
+
+            _session.Reset(ResetKind.Soft);
+            _session.WithMachine(machine =>
+            {
+                for (int address = 0; address < MemoryMap.MemSize; address++)
+                {
+                    machine.Memory.WriteByte((ushort)address, 0);
+                }
+
+                foreach (IntelHexSegment segment in image.Segments)
+                {
+                    for (int i = 0; i < segment.Data.Length; i++)
+                    {
+                        machine.Memory.WriteByte((ushort)(segment.Address + i), segment.Data[i]);
+                    }
+                }
+
+                machine.Cpu.State.PC = start;
+                machine.Cpu.State.SP = InitialStackPointer;
+            });
+
+            _lineAddresses.Clear();
+            _ranges.Clear();
+            ClearBreakpoints();
+            _entryPoint = start;
+            IsProgramLoaded = true;
+            LastAssembly = null;
+
+            Output?.Invoke(
+                "Импорт HEX · " + image.ByteCount + " байт · PC=" + start.ToString("X4") + "h",
+                LogLevel.Success);
+            return image;
+        }
+
+        /// <summary>Exports the 8000h–83FFh program area as Intel HEX.</summary>
+        public void ExportHex(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            MachineSnapshot snapshot = _session.CaptureSnapshot();
+            IntelHex.Save(path, snapshot.Memory, 0x8000, 0x83FF);
+            Output?.Invoke("Экспорт HEX · 8000h–83FFh · " + path, LogLevel.Success);
+        }
+
+        /// <summary>Saves a paused, consistent snapshot of the whole machine.</summary>
+        public void SaveState(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            MachineSnapshot snapshot = _session.CaptureSnapshot();
+            MachineStateSerializer.Save(path, snapshot, IsProgramLoaded, _entryPoint);
+            Output?.Invoke("Состояние сохранено · " + path, LogLevel.Success);
+        }
+
+        /// <summary>Restores a machine-state file without touching the editor text.</summary>
+        public void LoadState(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            MachineStateFile state = MachineStateSerializer.Load(path);
+            _session.WithMachine(machine => machine.Restore(state.Snapshot));
+
+            _lineAddresses.Clear();
+            _ranges.Clear();
+            ClearBreakpoints();
+            _entryPoint = state.EntryPoint;
+            IsProgramLoaded = state.ProgramLoaded;
+            LastAssembly = null;
+
+            Output?.Invoke("Состояние загружено · " + path, LogLevel.Success);
+        }
+
+        /// <summary>
+        /// Writes one CPU register (A…L, F, M, PC, SP) while the machine is
+        /// paused. F updates both the PSW byte and the live flag register.
+        /// </summary>
+        public bool SetRegister(string name, ushort value)
+        {
+            if (name == null) return false;
+            if (_session.State == RunState.Running)
+            {
+                Output?.Invoke("Остановите выполнение, чтобы редактировать регистры.", LogLevel.Warning);
+                return false;
+            }
+
+            string upper = name.Trim().ToUpperInvariant();
+            bool isWord = upper == "PC" || upper == "SP";
+            if (!isWord && value > 0xFF)
+            {
+                Output?.Invoke("Значение регистра " + upper + " должно быть в диапазоне 00h–FFh.", LogLevel.Warning);
+                return false;
+            }
+            if (!IsRegisterName(upper))
+            {
+                Output?.Invoke("Неизвестный регистр: " + name, LogLevel.Warning);
+                return false;
+            }
+
+            _session.WithMachine(machine =>
+            {
+                switch (upper)
+                {
+                    case "A": machine.Cpu.State.A = (byte)value; break;
+                    case "B": machine.Cpu.State.B = (byte)value; break;
+                    case "C": machine.Cpu.State.C = (byte)value; break;
+                    case "D": machine.Cpu.State.D = (byte)value; break;
+                    case "E": machine.Cpu.State.E = (byte)value; break;
+                    case "H": machine.Cpu.State.H = (byte)value; break;
+                    case "L": machine.Cpu.State.L = (byte)value; break;
+                    case "M": machine.Cpu.State.M = (byte)value; break;
+                    case "F":
+                        machine.Cpu.State.F = (byte)value;
+                        machine.Cpu.State.Flags.FromByte((byte)value);
+                        break;
+                    case "PC": machine.Cpu.State.PC = value; break;
+                    case "SP": machine.Cpu.State.SP = value; break;
+                }
+            });
+
+            string text = isWord ? value.ToString("X4") : value.ToString("X2");
+            Output?.Invoke("Регистр · " + upper + " ← " + text + "h", LogLevel.Info);
+            return true;
+        }
+
+        private static bool IsRegisterName(string name)
+        {
+            switch (name)
+            {
+                case "A":
+                case "B":
+                case "C":
+                case "D":
+                case "E":
+                case "H":
+                case "L":
+                case "M":
+                case "F":
+                case "PC":
+                case "SP":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private void BuildAddressMap(AssembleResult result)
@@ -333,18 +511,33 @@ namespace MikroLab.App
         }
     }
 
-    internal sealed class DemoClock : IClock
+    internal sealed class DemoClock : IInterruptibleClock
     {
+        private volatile bool _stop;
+
         public void Delay(int milliseconds)
         {
             // A student program must never freeze the execution thread for
             // seconds. Real hardware would wait; a desktop emulator should
-            // remain responsive, so long monitor delays are capped.
-            int wait = Math.Max(0, Math.Min(milliseconds, 1500));
-            if (wait > 0)
+            // remain responsive, so long monitor delays are capped. The wait
+            // is sliced and can be aborted by pause/reset/dispose.
+            int remaining = Math.Max(0, Math.Min(milliseconds, 1500));
+            while (remaining > 0 && !_stop)
             {
-                Thread.Sleep(wait);
+                int chunk = Math.Min(remaining, 10);
+                Thread.Sleep(chunk);
+                remaining -= chunk;
             }
+        }
+
+        public void RequestStop()
+        {
+            _stop = true;
+        }
+
+        public void ClearStop()
+        {
+            _stop = false;
         }
     }
 

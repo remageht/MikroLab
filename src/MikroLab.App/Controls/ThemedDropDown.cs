@@ -125,22 +125,35 @@ namespace MikroLab.App.Controls
 
         private void OpenMenu()
         {
-            if (_menu != null)
+            if (_menu != null && _menu.Visible)
             {
                 _menu.Close();
             }
 
-            var menu = new ContextMenuStrip
+            if (_menu == null)
             {
-                BackColor = AppTheme.SurfaceRaised,
-                ForeColor = AppTheme.Text,
-                Font = AppTheme.UiFont,
-                ShowImageMargin = false,
-                ShowCheckMargin = false,
-                Padding = new Padding(4),
-                MinimumSize = new Size(Math.Max(Width, 180), 0),
-                Renderer = new DarkMenuRenderer()
-            };
+                _menu = new ContextMenuStrip
+                {
+                    BackColor = AppTheme.SurfaceRaised,
+                    ForeColor = AppTheme.Text,
+                    Font = AppTheme.UiFont,
+                    ShowImageMargin = false,
+                    ShowCheckMargin = false,
+                    Padding = new Padding(4),
+                    Renderer = new DarkMenuRenderer()
+                };
+                _menu.Closed += (sender, args) => Invalidate();
+            }
+
+            // Rebuild the items in place. Disposing the menu inside its own
+            // Closed handler breaks WinForms key processing (the next Escape
+            // or arrow key hits a disposed ContextMenuStrip).
+            while (_menu.Items.Count > 0)
+            {
+                _menu.Items[0].Dispose();
+            }
+
+            _menu.MinimumSize = new Size(Math.Max(Width, 180), 0);
 
             for (int i = 0; i < _items.Count; i++)
             {
@@ -157,18 +170,10 @@ namespace MikroLab.App.Controls
                     SelectIndex(index);
                     SelectionChanged?.Invoke(index);
                 };
-                menu.Items.Add(item);
+                _menu.Items.Add(item);
             }
 
-            menu.Closed += (sender, args) =>
-            {
-                if (_menu == menu) _menu = null;
-                menu.Dispose();
-                Invalidate();
-            };
-
-            _menu = menu;
-            menu.Show(this, new Point(0, Height + 2));
+            _menu.Show(this, new Point(0, Height + 2));
             Invalidate();
         }
 

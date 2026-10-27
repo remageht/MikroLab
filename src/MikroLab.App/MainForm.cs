@@ -17,7 +17,7 @@ namespace MikroLab.App
     /// same <see cref="MachineHost"/>, so a program assembled in Studio keeps
     /// running when the user switches to the bench.
     /// </summary>
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private enum Workspace
         {
@@ -33,6 +33,9 @@ namespace MikroLab.App
         private readonly Panel _switchBar;
         private readonly UiButton _studioTab;
         private readonly UiButton _labTab;
+        private readonly UiButton _fileButton;
+        private readonly ThemedDropDown _speedBox;
+        private readonly Label _speedLabel;
         private readonly Timer _uiTimer;
         private readonly ToolTip _toolTips;
 
@@ -184,16 +187,48 @@ namespace MikroLab.App
             about.Click += (sender, args) => ShowHelp();
             _toolTips.SetToolTip(about, "Горячие клавиши, возможности и лицензия");
 
+            _fileButton = new UiButton
+            {
+                Text = "Файл",
+                Kind = UiButtonKind.Ghost,
+                Width = 82,
+                Height = 32,
+                Font = AppTheme.SmallFont,
+                Location = new Point(352, 16)
+            };
+            _fileButton.Click += (sender, args) => ShowFileMenu();
+            _toolTips.SetToolTip(_fileButton, "Intel HEX, состояние машины и файлы программ");
+
+            _speedLabel = AppTheme.Label("Скорость", AppTheme.TextDim, AppTheme.SmallFont);
+            _speedLabel.AutoSize = true;
+            _speedLabel.BackColor = Color.Transparent;
+
+            _speedBox = new ThemedDropDown
+            {
+                Width = 148,
+                Height = 30,
+                Font = AppTheme.SmallFont
+            };
+            _speedBox.SetItems(SpeedLabels);
+            _speedBox.SelectIndex(0);
+            _speedBox.SelectionChanged += OnSpeedSelected;
+            _speedBox.SetToolTip("Скорость выполнения: от оригинала до максимума");
+
             _header.Controls.Add(mark);
             _header.Controls.Add(brand);
             _header.Controls.Add(tagline);
+            _header.Controls.Add(_fileButton);
             _header.Controls.Add(_switchBar);
+            _header.Controls.Add(_speedLabel);
+            _header.Controls.Add(_speedBox);
             _header.Controls.Add(about);
             _header.Resize += (sender, args) =>
             {
-                _switchBar.Left = Math.Max(360, (_header.Width - _switchBar.Width) / 2);
+                _switchBar.Left = Math.Max(448, (_header.Width - _switchBar.Width) / 2);
                 _switchBar.Top = 12;
                 about.Location = new Point(_header.Width - about.Width - 18, 16);
+                _speedBox.Location = new Point(about.Left - _speedBox.Width - 10, 17);
+                _speedLabel.Location = new Point(_speedBox.Left - _speedLabel.Width - 8, 24);
             };
 
             // ------------------------------------------------------------------ workspaces
@@ -478,6 +513,18 @@ namespace MikroLab.App
                 case Keys.Control | Keys.S:
                     if (_workspace == Workspace.Studio) _studio.HostSave();
                     return true;
+                case Keys.Control | Keys.I:
+                    ImportHex();
+                    return true;
+                case Keys.Control | Keys.E:
+                    ExportHex();
+                    return true;
+                case Keys.Control | Keys.Shift | Keys.S:
+                    SaveState();
+                    return true;
+                case Keys.Control | Keys.Shift | Keys.O:
+                    LoadState();
+                    return true;
                 case Keys.Control | Keys.D1:
                     SwitchTo(Workspace.Studio);
                     return true;
@@ -682,6 +729,7 @@ namespace MikroLab.App
                 _captureTimer?.Dispose();
                 _captureWatchdog?.Dispose();
                 _toolTips?.Dispose();
+                _fileMenu?.Dispose();
                 _host?.Dispose();
             }
             base.Dispose(disposing);
