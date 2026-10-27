@@ -34,6 +34,7 @@ namespace MikroLab.App
         private readonly Dictionary<int, ushort> _lineAddresses = new Dictionary<int, ushort>();
         private readonly List<AddressRange> _ranges = new List<AddressRange>();
         private ushort _entryPoint = 0x8000;
+        private MachineProfile _profile = MachineProfile.Vntu;
         private bool _disposed;
 
         public MachineHost()
@@ -65,6 +66,9 @@ namespace MikroLab.App
         public AssembleResult LastAssembly { get; private set; }
         public string LastSource { get; private set; } = string.Empty;
         public ushort EntryPoint => _entryPoint;
+        public MachineProfile Profile => _profile;
+        public ushort Origin => _profile.Origin;
+        public ushort StackPointer => _profile.StackPointer;
 
         public event Action<string, LogLevel> Output;
 
@@ -77,7 +81,7 @@ namespace MikroLab.App
                 _session.Pause();
             }
 
-            AssembleResult result = I8080Assembler.Assemble(source ?? string.Empty, 0x8000);
+            AssembleResult result = I8080Assembler.Assemble(source ?? string.Empty, _profile.Origin);
             LastAssembly = result;
             LastSource = source ?? string.Empty;
 
@@ -88,6 +92,10 @@ namespace MikroLab.App
                 return result;
             }
 
+            ushort entry = result.StartAddress == _profile.Origin
+                ? _profile.EntryPoint
+                : result.StartAddress;
+
             _session.WithMachine(machine =>
             {
                 machine.Cpu.Reset();
@@ -95,7 +103,9 @@ namespace MikroLab.App
                 machine.Display.Reset();
                 machine.Ppi.Reset();
 
-                for (int address = 0x8000; address <= 0x83FF; address++)
+                int clearStart = _profile.Origin;
+                int clearEnd = Math.Min(0xFFFF, clearStart + 0x3FF);
+                for (int address = clearStart; address <= clearEnd; address++)
                 {
                     machine.Memory.WriteByte((ushort)address, 0);
                 }
@@ -108,13 +118,13 @@ namespace MikroLab.App
                     }
                 }
 
-                machine.Cpu.State.PC = result.StartAddress;
-                machine.Cpu.State.SP = InitialStackPointer;
+                machine.Cpu.State.PC = entry;
+                machine.Cpu.State.SP = _profile.StackPointer;
             });
 
             BuildAddressMap(result);
             ApplyBreakpoints();
-            _entryPoint = result.StartAddress;
+            _entryPoint = entry;
             IsProgramLoaded = true;
 
             int bytes = result.Chunks.Sum(chunk => chunk.Data.Length);
@@ -122,10 +132,39 @@ namespace MikroLab.App
                 ? result.StartAddress.ToString("X4") + "h–" + (result.EndAddress - 1).ToString("X4") + "h"
                 : "—";
             Output?.Invoke(
-                "Собрано · " + bytes + " байт · " + range + " · символов: " + result.Symbols.Count,
+                "Собрано · " + bytes + " байт · " + range + " · символов: " + result.Symbols.Count +
+                " · профиль " + _profile.Name,
                 LogLevel.Success);
 
             return result;
+        }
+
+        /// <summary>
+        /// Switches the board to another memory/stack preset. The caller is
+        /// expected to reassemble the current source so the new default ORG
+        /// takes effect.
+        /// </summary>
+        public void ApplyProfile(MachineProfile profile)
+        {
+            if (profile == null) throw new ArgumentNullException(nameof(profile));
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            _profile = profile;
+            _session.WithMachine(machine =>
+            {
+                machine.Cpu.State.PC = profile.EntryPoint;
+                machine.Cpu.State.SP = profile.StackPointer;
+            });
+            _entryPoint = profile.EntryPoint;
+            Output?.Invoke("Профиль · " + profile, LogLevel.Info);
+        }
+
+        public void ConfigureProfile(string name, ushort origin, ushort entryPoint, ushort stackPointer)
+        {
+            ApplyProfile(new MachineProfile(name, origin, entryPoint, stackPointer));
         }
 
         public void LoadSource(string source)
@@ -153,7 +192,7 @@ namespace MikroLab.App
                 throw new InvalidDataException("Файл Intel HEX не содержит данных.");
             }
 
-            ushort start = image.StartAddress ?? 0x8000;
+            ushort start = image.StartAddress ?? _profile.Origin;
 
             _session.Reset(ResetKind.Soft);
             _session.WithMachine(machine =>
@@ -172,7 +211,7 @@ namespace MikroLab.App
                 }
 
                 machine.Cpu.State.PC = start;
-                machine.Cpu.State.SP = InitialStackPointer;
+                machine.Cpu.State.SP = _profile.StackPointer;
             });
 
             _lineAddresses.Clear();
@@ -188,7 +227,7 @@ namespace MikroLab.App
             return image;
         }
 
-        /// <summary>Exports the 8000h–83FFh program area as Intel HEX.</summary>
+        /// <summary>Exports the profile's 1 KiB program area as Intel HEX.</summary>
         public void ExportHex(string path)
         {
             if (_session.State == RunState.Running)
@@ -196,9 +235,145 @@ namespace MikroLab.App
                 _session.Pause();
             }
 
+            int start = _profile.Origin;
+            int end = Math.Min(0xFFFF, start + 0x3FF);
             MachineSnapshot snapshot = _session.CaptureSnapshot();
-            IntelHex.Save(path, snapshot.Memory, 0x8000, 0x83FF);
-            Output?.Invoke("Экспорт HEX · 8000h–83FFh · " + path, LogLevel.Success);
+            IntelHex.Save(path, snapshot.Memory, (ushort)start, (ushort)end);
+            Output?.Invoke(
+                "Экспорт HEX · " + start.ToString("X4") + "h–" + end.ToString("X4") + "h · " + path,
+                LogLevel.Success);
+        }
+
+        // ------------------------------------------------------------------ .580 images
+
+        /// <summary>
+        /// Loads an original KP580 .580 image: 64 KiB RAM plus registers, PC
+        /// and SP. Flags are not part of the format and start from reset.
+        /// </summary>
+        public Kr580Image Import580(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            Kr580Image image = Kr580Image.Load(path);
+            _session.Reset(ResetKind.Soft);
+            _session.WithMachine(machine =>
+            {
+                machine.Restore(image.ToSnapshot());
+                machine.Display.Reset();
+                machine.Ppi.Reset();
+            });
+
+            _lineAddresses.Clear();
+            _ranges.Clear();
+            ClearBreakpoints();
+            _entryPoint = image.PC;
+            IsProgramLoaded = true;
+            LastAssembly = null;
+
+            Output?.Invoke(
+                "Импорт .580 · PC=" + image.PC.ToString("X4") + "h · SP=" +
+                image.SP.ToString("X4") + "h · " + path,
+                LogLevel.Success);
+            return image;
+        }
+
+        /// <summary>Writes the complete machine as an original .580 image.</summary>
+        public void Export580(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            MachineSnapshot snapshot = _session.CaptureSnapshot();
+            Kr580Image.FromSnapshot(snapshot).Save(path);
+            Output?.Invoke("Экспорт .580 · PC=" + snapshot.PC.ToString("X4") +
+                "h · SP=" + snapshot.SP.ToString("X4") + "h · " + path, LogLevel.Success);
+        }
+
+        // ------------------------------------------------------------------ raw binary images
+
+        /// <summary>
+        /// Loads a raw binary at the profile origin (or at 0000h when the file
+        /// is a complete 64 KiB image). No metadata is available in .bin, so
+        /// PC starts at the load address and SP comes from the profile.
+        /// </summary>
+        public ushort ImportBinary(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            byte[] data = File.ReadAllBytes(path);
+            if (data.Length == 0)
+            {
+                throw new InvalidDataException("Бинарный файл пуст.");
+            }
+
+            int start = data.Length == MemoryMap.MemSize ? 0 : _profile.Origin;
+            if (start + data.Length > MemoryMap.MemSize)
+            {
+                throw new InvalidDataException(
+                    "Бинарный образ не помещается в 64K по адресу " + start.ToString("X4") + "h.");
+            }
+
+            _session.Reset(ResetKind.Soft);
+            _session.WithMachine(machine =>
+            {
+                for (int address = 0; address < MemoryMap.MemSize; address++)
+                {
+                    machine.Memory.WriteByte((ushort)address, 0);
+                }
+
+                for (int i = 0; i < data.Length; i++)
+                {
+                    machine.Memory.WriteByte((ushort)(start + i), data[i]);
+                }
+
+                machine.Cpu.State.Flags.Reset();
+                machine.Cpu.State.F = 0x02;
+                machine.Cpu.State.PC = (ushort)start;
+                machine.Cpu.State.SP = _profile.StackPointer;
+                machine.State = RunState.Stopped;
+                machine.Display.Reset();
+                machine.Ppi.Reset();
+            });
+
+            _lineAddresses.Clear();
+            _ranges.Clear();
+            ClearBreakpoints();
+            _entryPoint = (ushort)start;
+            IsProgramLoaded = true;
+            LastAssembly = null;
+
+            Output?.Invoke(
+                "Импорт BIN · " + data.Length + " байт · PC=" + start.ToString("X4") + "h · " + path,
+                LogLevel.Success);
+            return (ushort)start;
+        }
+
+        /// <summary>Writes the profile's 1 KiB program area as a raw binary.</summary>
+        public void ExportBinary(string path)
+        {
+            if (_session.State == RunState.Running)
+            {
+                _session.Pause();
+            }
+
+            int start = _profile.Origin;
+            int length = Math.Min(0x400, MemoryMap.MemSize - start);
+            MachineSnapshot snapshot = _session.CaptureSnapshot();
+            var data = new byte[length];
+            Array.Copy(snapshot.Memory, start, data, 0, length);
+            File.WriteAllBytes(path, data);
+            Output?.Invoke(
+                "Экспорт BIN · " + start.ToString("X4") + "h–" +
+                (start + length - 1).ToString("X4") + "h · " + path,
+                LogLevel.Success);
         }
 
         /// <summary>Saves a paused, consistent snapshot of the whole machine.</summary>
@@ -397,7 +572,7 @@ namespace MikroLab.App
             _session.WithMachine(machine =>
             {
                 machine.Cpu.State.PC = EntryPoint;
-                machine.Cpu.State.SP = InitialStackPointer;
+                machine.Cpu.State.SP = _profile.StackPointer;
             });
         }
 

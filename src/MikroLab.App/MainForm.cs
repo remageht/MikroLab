@@ -519,6 +519,21 @@ namespace MikroLab.App
                 case Keys.Control | Keys.E:
                     ExportHex();
                     return true;
+                case Keys.Control | Keys.Shift | Keys.I:
+                    Import580();
+                    return true;
+                case Keys.Control | Keys.Shift | Keys.E:
+                    Export580();
+                    return true;
+                case Keys.Control | Keys.Alt | Keys.I:
+                    ImportBinary();
+                    return true;
+                case Keys.Control | Keys.Alt | Keys.E:
+                    ExportBinary();
+                    return true;
+                case Keys.Control | Keys.Shift | Keys.P:
+                    EditProfile();
+                    return true;
                 case Keys.Control | Keys.Shift | Keys.S:
                     SaveState();
                     return true;

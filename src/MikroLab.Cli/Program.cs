@@ -266,19 +266,38 @@ namespace MikroLab.Cli
 
                 int steps = GetIntOption(args, "--steps", 0);
                 ExecuteSteps(program.Machine, steps);
-                MachineStateSerializer.Save(output, program.Machine.Capture(),
-                    program.ProgramLoaded, program.EntryPoint);
-                Console.WriteLine("wrote " + output + " at PC=" +
-                    program.Machine.Cpu.State.PC.ToString("X4") + "h");
+
+                if (Is580(output))
+                {
+                    MachineSnapshot snapshot = program.Machine.Capture();
+                    Kr580Image.FromSnapshot(snapshot).Save(output);
+                    Console.WriteLine("wrote " + output + " (.580, PC=" +
+                        snapshot.PC.ToString("X4") + "h, SP=" + snapshot.SP.ToString("X4") + "h)");
+                }
+                else
+                {
+                    MachineStateSerializer.Save(output, program.Machine.Capture(),
+                        program.ProgramLoaded, program.EntryPoint);
+                    Console.WriteLine("wrote " + output + " at PC=" +
+                        program.Machine.Cpu.State.PC.ToString("X4") + "h");
+                }
                 return 0;
             }
 
             if (action == "load")
             {
                 string input = RequireSource(args, 2);
-                MachineStateFile state = MachineStateSerializer.Load(input);
                 var machine = CreateMachine();
-                machine.Restore(state.Snapshot);
+                if (Is580(input))
+                {
+                    machine.Restore(Kr580Image.Load(input).ToSnapshot());
+                }
+                else
+                {
+                    MachineStateFile state = MachineStateSerializer.Load(input);
+                    machine.Restore(state.Snapshot);
+                }
+
                 int steps = GetIntOption(args, "--steps", 0);
                 ExecuteSteps(machine, steps);
                 PrintState(machine, steps, machine.State == RunState.Halted);
@@ -317,6 +336,38 @@ namespace MikroLab.Cli
                 var machine = CreateMachine();
                 machine.Restore(state.Snapshot);
                 return new LoadedProgram(machine, state.ProgramLoaded, state.EntryPoint);
+            }
+
+            if (extension == ".580")
+            {
+                Kr580Image image = Kr580Image.Load(path);
+                var machine = CreateMachine();
+                machine.Restore(image.ToSnapshot());
+                machine.State = RunState.Stopped;
+                return new LoadedProgram(machine, true, image.PC);
+            }
+
+            if (extension == ".bin")
+            {
+                byte[] data = File.ReadAllBytes(path);
+                if (data.Length == 0)
+                    throw new InvalidDataException("binary file is empty");
+                int start = data.Length == MemoryMap.MemSize ? 0 : DefaultOrigin;
+                if (start + data.Length > MemoryMap.MemSize)
+                    throw new InvalidDataException("binary does not fit into 64K at " +
+                        start.ToString("X4") + "h");
+
+                var machine = CreateMachine();
+                machine.Reset(ResetKind.Soft);
+                ClearMemory(machine);
+                for (int i = 0; i < data.Length; i++)
+                {
+                    machine.Memory.WriteByte((ushort)(start + i), data[i]);
+                }
+                machine.Cpu.State.PC = (ushort)start;
+                machine.Cpu.State.SP = DefaultStack;
+                machine.State = RunState.Stopped;
+                return new LoadedProgram(machine, true, (ushort)start);
             }
 
             if (extension == ".hex" || extension == ".ihx")
@@ -455,16 +506,18 @@ namespace MikroLab.Cli
             Console.WriteLine();
             Console.WriteLine("usage:");
             Console.WriteLine("  MikroLab.Cli assemble <source.asm> [-o <out.hex>] [--listing]");
-            Console.WriteLine("  MikroLab.Cli run <source.asm|file.hex|state.json> [--steps N] [--max-cycles N] [--trace] [--dump]");
-            Console.WriteLine("  MikroLab.Cli step <source> [--count N]");
-            Console.WriteLine("  MikroLab.Cli dump <source> [--start XXXX] [--length N]");
+            Console.WriteLine("  MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--trace] [--dump]");
+            Console.WriteLine("  MikroLab.Cli step <source|file.bin|file.580> [--count N]");
+            Console.WriteLine("  MikroLab.Cli dump <source|file.bin|file.580> [--start XXXX] [--length N]");
             Console.WriteLine("  MikroLab.Cli hex <file.hex|file.bin> -o <output> [--start XXXX] [--start-record]");
-            Console.WriteLine("  MikroLab.Cli state save <source> -o <state.json> [--steps N]");
-            Console.WriteLine("  MikroLab.Cli state load <state.json> [--steps N] [--dump]");
+            Console.WriteLine("  MikroLab.Cli state save <source> -o <state.json|state.580> [--steps N]");
+            Console.WriteLine("  MikroLab.Cli state load <state.json|state.580> [--steps N] [--dump]");
             Console.WriteLine();
             Console.WriteLine("Programs assembled without ORG start at 8000h. Intel HEX import");
             Console.WriteLine("clears the 64K memory image; state files store the full machine,");
             Console.WriteLine("including memory, devices, flags, call stack and HLT state.");
+            Console.WriteLine(".580 files use the original 65,549-byte KP580 layout: 64K RAM,");
+            Console.WriteLine("A B C D E H L W Z, little-endian PC and SP (no flags).");
         }
 
         // ------------------------------------------------------------------ options
@@ -472,6 +525,11 @@ namespace MikroLab.Cli
         private static bool IsHelp(string value)
         {
             return value == "-h" || value == "--help" || value == "help" || value == "/?";
+        }
+
+        private static bool Is580(string path)
+        {
+            return string.Equals(Path.GetExtension(path), ".580", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string RequireSource(string[] args, int index)

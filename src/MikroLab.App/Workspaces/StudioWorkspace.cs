@@ -476,7 +476,7 @@ namespace MikroLab.App.Workspaces
 
             _filePath = null;
             _suppressDirty = true;
-            _editor.Code = SamplePrograms.NewTemplate;
+            _editor.Code = SamplePrograms.NewTemplateFor(_host.Origin);
             _suppressDirty = false;
             _loadingSample = true;
             _currentSampleIndex = -1;
@@ -731,6 +731,34 @@ namespace MikroLab.App.Workspaces
         public void HostNew() => NewDocument();
         public void HostOpen() => OpenDocument();
         public void HostSave() => SaveDocument();
+
+        /// <summary>
+        /// Applies a memory/stack profile and rebuilds the current source with
+        /// the profile's default ORG so the editor, listing and machine agree.
+        /// </summary>
+        public void HostApplyProfile(MachineProfile profile)
+        {
+            _host.ApplyProfile(profile);
+            AssembleProgram();
+            UpdateDocumentHeader();
+        }
+
+        /// <summary>
+        /// Synchronises the Studio after a non-assembler image was loaded
+        /// (.580, Intel HEX or a saved state) so "Run" executes the imported
+        /// bytes instead of reassembling the editor buffer.
+        /// </summary>
+        public void HostExternalProgramLoaded()
+        {
+            _programLoaded = _host.IsProgramLoaded;
+            if (_programLoaded)
+            {
+                _lastAssembledText = _editor.Code;
+            }
+            UpdateFromSnapshot(_host.Snapshot());
+            UpdateButtons();
+        }
+
         public string HostCode => _editor.Code;
         public bool IsRunning => _host.State == RunState.Running;
     }

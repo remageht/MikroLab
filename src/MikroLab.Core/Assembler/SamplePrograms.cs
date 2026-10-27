@@ -21,7 +21,8 @@ namespace MikroLab.Core.Assembler
 
     /// <summary>
     /// Ready-to-run programs shared by the Studio UI, tests and automation.
-    /// All examples start at 8000h and only use documented 8080 instructions.
+    /// Examples use explicit ORG directives; the UMK sample demonstrates the
+    /// alternative 0800h profile.
     /// </summary>
     public static class SamplePrograms
     {
@@ -30,16 +31,20 @@ namespace MikroLab.Core.Assembler
             new SampleProgram("Бегущие огни", RunningLight),
             new SampleProgram("Сумма 1…5", SumOneToFive),
             new SampleProgram("Переключатели → лампы", TumblersToLamps),
-            new SampleProgram("Регистры (лаб. 1)", RegisterLab)
+            new SampleProgram("Регистры (лаб. 1)", RegisterLab),
+            new SampleProgram("УМК · огни с 0800h", UmkRunningLight)
         };
 
         public static string Default => All[0].Code;
 
-        public const string NewTemplate =
+        /// <summary>Generates the new-project template for a board profile.</summary>
+        public static string NewTemplateFor(ushort origin)
+        {
+            return
 @"; MikroLab Studio · новый проект
 ; ORG задаёт адрес загрузки программы.
 
-        ORG 8000h
+        ORG " + origin.ToString("X4") + @"h
 
 START:  MVI A, 90h        ; ВВ55: PA — вход, PB/PC — выход
         OUT 0FBh          ; записать управляющее слово
@@ -49,6 +54,9 @@ START:  MVI A, 90h        ; ВВ55: PA — вход, PB/PC — выход
 
         END
 ";
+        }
+
+        public static string NewTemplate => NewTemplateFor(0x8000);
 
         public const string RunningLight =
 @"; MikroLab Studio · пример: бегущие огни
@@ -148,6 +156,33 @@ LOOP:   IN 0FAh           ; SA1..SA3 → A
         MOV A, M          ; A ← 8000h
         STA 8202h
         HLT
+
+        END
+";
+
+        public const string UmkRunningLight =
+@"; MikroLab Studio · пример для профиля УМК (ORG 0800h)
+; Программа загружается в область монитора 0800h.
+; Лампы подключены к порту B ВВ55 (OUT F9h).
+
+        ORG 0800h
+
+START:  MVI A, 90h        ; PA — вход, PB/PC — выход
+        OUT 0FBh          ; управляющее слово ВВ55
+        MVI A, 01h        ; начальный огонь
+        MVI B, 08h        ; восемь позиций
+
+SHIFT:  OUT 0F9h          ; вывести A на лампы порта B
+        CALL DELAY
+        RLC
+        DCR B
+        JNZ SHIFT
+        JMP START
+
+DELAY:  MVI C, 0C0h
+DLOOP:  DCR C
+        JNZ DLOOP
+        RET
 
         END
 ";

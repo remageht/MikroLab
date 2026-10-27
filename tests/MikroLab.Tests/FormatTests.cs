@@ -18,6 +18,8 @@ namespace MikroLab.Tests
             Test_MachineState_RoundTrip_CallStack();
             Test_MachineState_RoundTrip_Halted();
             Test_MachineState_RejectsMalformedInput();
+            Test_Kr580_LayoutAndRoundTrip();
+            Test_Kr580_RejectsMalformedInput();
             Console.WriteLine("  All FormatTests PASSED.\n");
         }
 
@@ -173,6 +175,94 @@ namespace MikroLab.Tests
             Console.WriteLine("  [PASS] Machine state rejects malformed input");
         }
 
+        private static void Test_Kr580_LayoutAndRoundTrip()
+        {
+            var image = new Kr580Image
+            {
+                A = 0x11,
+                B = 0x22,
+                C = 0x33,
+                D = 0x44,
+                E = 0x55,
+                H = 0x66,
+                L = 0x77,
+                W = 0x88,
+                Z = 0x99,
+                PC = 0x8123,
+                SP = 0x83F0
+            };
+
+            for (int i = 0; i < image.Memory.Length; i++)
+            {
+                image.Memory[i] = (byte)((i * 7 + 3) & 0xFF);
+            }
+
+            byte[] raw;
+            using (var stream = new MemoryStream())
+            {
+                image.Save(stream);
+                raw = stream.ToArray();
+            }
+
+            Assert(raw.Length == 65549, "A .580 image must be exactly 65,549 bytes");
+            Assert(Kr580Image.FileLength == 65549, "Kr580Image.FileLength must match the original format");
+            Assert(raw[0x8000] == image.Memory[0x8000], "RAM prefix byte mismatch");
+            Assert(raw[65536] == 0x11 && raw[65537] == 0x22 && raw[65538] == 0x33,
+                "A/B/C must follow the 64K RAM image");
+            Assert(raw[65539] == 0x44 && raw[65540] == 0x55 && raw[65541] == 0x66,
+                "D/E/H must follow A/B/C");
+            Assert(raw[65542] == 0x77 && raw[65543] == 0x88 && raw[65544] == 0x99,
+                "L/W/Z must occupy the last three register bytes");
+            Assert(raw[65545] == 0x23 && raw[65546] == 0x81, "PC must be little-endian at 65545");
+            Assert(raw[65547] == 0xF0 && raw[65548] == 0x83,
+                "The last two bytes must be little-endian SP, not an FF FF signature");
+
+            Kr580Image loaded;
+            using (var stream = new MemoryStream(raw))
+            {
+                loaded = Kr580Image.Load(stream);
+            }
+
+            Assert(loaded.A == 0x11 && loaded.B == 0x22 && loaded.C == 0x33 &&
+                loaded.D == 0x44 && loaded.E == 0x55 && loaded.H == 0x66 && loaded.L == 0x77,
+                "Registers must survive a .580 round trip");
+            Assert(loaded.W == 0x88 && loaded.Z == 0x99, "W/Z must survive a .580 round trip");
+            Assert(loaded.PC == 0x8123, "PC must survive a .580 round trip");
+            Assert(loaded.SP == 0x83F0, "SP must survive a .580 round trip");
+            Assert(loaded.Memory[0x8000] == image.Memory[0x8000] &&
+                loaded.Memory[0xFFFF] == image.Memory[0xFFFF], "RAM must survive a .580 round trip");
+
+            MachineSnapshot snapshot = loaded.ToSnapshot();
+            Assert(snapshot.A == 0x11 && snapshot.PC == 0x8123 && snapshot.SP == 0x83F0,
+                "ToSnapshot must expose CPU state");
+            Assert(snapshot.F == 0x02 && !snapshot.Flags.S && !snapshot.Flags.Z &&
+                !snapshot.Flags.C && !snapshot.Flags.AC && !snapshot.Flags.P,
+                ".580 has no flags, so loading must start from reset flags (D1 set)");
+            Assert(snapshot.Memory.Length == 0x10000 && snapshot.Memory[0xFFFF] == image.Memory[0xFFFF],
+                "ToSnapshot must clone the complete 64K RAM image");
+
+            Kr580Image exported = Kr580Image.FromSnapshot(snapshot);
+            Assert(exported.PC == snapshot.PC && exported.SP == snapshot.SP &&
+                exported.Memory[0x8000] == snapshot.Memory[0x8000],
+                "FromSnapshot must preserve PC, SP and RAM");
+            Console.WriteLine("  [PASS] .580 fixed layout and snapshot round trip");
+        }
+
+        private static void Test_Kr580_RejectsMalformedInput()
+        {
+            Expect580Error(new byte[65548], "short image");
+            Expect580Error(new byte[65550], "trailing byte");
+            Expect580Error(Array.Empty<byte>(), "empty image");
+
+            var valid = new byte[Kr580Image.FileLength];
+            using (var stream = new MemoryStream(valid))
+            {
+                Kr580Image image = Kr580Image.Load(stream);
+                Assert(image.Memory.Length == 0x10000, "A zero-filled .580 image must be valid");
+            }
+            Console.WriteLine("  [PASS] .580 rejects wrong-sized input");
+        }
+
         private static string Join(params string[] records)
         {
             return string.Join("\r\n", records);
@@ -219,6 +309,22 @@ namespace MikroLab.Tests
                 return;
             }
             throw new InvalidOperationException("Expected state failure: " + what);
+        }
+
+        private static void Expect580Error(byte[] data, string what)
+        {
+            try
+            {
+                using (var stream = new MemoryStream(data))
+                {
+                    Kr580Image.Load(stream);
+                }
+            }
+            catch (InvalidDataException)
+            {
+                return;
+            }
+            throw new InvalidOperationException("Expected .580 failure: " + what);
         }
 
         private static void Assert(bool condition, string message)

@@ -33,6 +33,7 @@ namespace MikroLab.Tests
             Test_CallStack_IsExposedWhilePaused();
             Test_AssemblerError_ReportsLine();
             Test_ProfileSelection();
+            Test_MachineProfiles();
 
             Console.WriteLine($"  StudioIntegrationTests: {_passed} passed");
         }
@@ -104,14 +105,24 @@ namespace MikroLab.Tests
             {
                 SampleProgram sample = SamplePrograms.All[i];
                 AssembleResult result = I8080Assembler.Assemble(sample.Code, 0x8000);
+                ushort expectedOrigin = sample.Code.IndexOf("ORG 0800h", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? (ushort)0x0800
+                    : (ushort)0x8000;
                 Check(result.Success, "Sample must assemble: " + sample.Name);
                 Check(result.Errors.Count == 0, "Sample must not have errors: " + sample.Name);
-                Check(result.StartAddress == 0x8000, "Sample must start at 8000h: " + sample.Name);
+                Check(result.StartAddress == expectedOrigin,
+                    "Sample must start at " + expectedOrigin.ToString("X4") + "h: " + sample.Name);
                 Check(result.EndAddress > result.StartAddress, "Sample must emit bytes: " + sample.Name);
             }
 
             AssembleResult template = I8080Assembler.Assemble(SamplePrograms.NewTemplate, 0x8000);
             Check(template.Success, "New-project template must assemble");
+
+            AssembleResult umkTemplate = I8080Assembler.Assemble(
+                SamplePrograms.NewTemplateFor(0x0800), 0x8000);
+            Check(umkTemplate.Success, "UMK new-project template must assemble");
+            Check(umkTemplate.StartAddress == 0x0800,
+                "NewTemplateFor(0800h) must emit code in the UMK area");
         }
 
         private static void Test_SumProgram_WritesMemoryAndLamps()
@@ -283,6 +294,37 @@ namespace MikroLab.Tests
 
             Check(legacy.Cpu.Profile == CpuProfile.Legacy, "Default machine must keep legacy CPU");
             Check(extended.Cpu.Profile == CpuProfile.Extended, "Studio machine must use extended CPU");
+        }
+
+        private static void Test_MachineProfiles()
+        {
+            MachineProfile vntu = MachineProfile.Vntu;
+            Check(vntu.Origin == 0x8000, "VNTU profile must keep ORG 8000h");
+            Check(vntu.EntryPoint == 0x8000, "VNTU profile must start at 8000h");
+            Check(vntu.StackPointer == 0x83F0, "VNTU profile must keep SP=83F0h");
+
+            MachineProfile umk = MachineProfile.Umk;
+            Check(umk.Origin == 0x0800, "UMK profile must load at 0800h");
+            Check(umk.EntryPoint == 0x0800, "UMK profile must start at 0800h");
+            Check(umk.StackPointer == 0x0FFF, "UMK profile must default to SP=0FFFh");
+
+            var custom = new MachineProfile("Лаборатория", 0x1000, 0x1010, 0x1FF0);
+            Check(custom.Name == "Лаборатория", "Custom profile name must be preserved");
+            Check(custom.Origin == 0x1000 && custom.EntryPoint == 0x1010 &&
+                custom.StackPointer == 0x1FF0, "Custom profile addresses must be preserved");
+            Check(custom.ToString().Contains("1000") && custom.ToString().Contains("1FF0"),
+                "Profile description must include ORG and SP");
+
+            AssembleResult umkSample = I8080Assembler.Assemble(SamplePrograms.UmkRunningLight, 0x8000);
+            Check(umkSample.Success, "UMK sample must assemble");
+            Check(umkSample.StartAddress == 0x0800, "UMK sample must start at 0800h");
+
+            var machine = new Machine(profile: CpuProfile.Extended);
+            machine.Memory.WriteByte(0x0800, 0x76); // HLT
+            machine.Cpu.State.PC = umk.Origin;
+            machine.Cpu.State.SP = umk.StackPointer;
+            Check(!machine.Step(), "UMK HLT must stop the CPU");
+            Check(machine.Cpu.State.PC == 0x0800, "UMK program must execute at 0800h");
         }
 
         private static bool IsRunning(MachineSession session)

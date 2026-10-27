@@ -9,6 +9,7 @@ namespace MikroLab.App
     internal sealed partial class MainForm
     {
         private ContextMenuStrip _fileMenu;
+        private ToolStripMenuItem _profileMenuItem;
 
         private static readonly string[] SpeedLabels =
         {
@@ -74,6 +75,13 @@ namespace MikroLab.App
                 _fileMenu.Items.Add(new ToolStripSeparator());
                 _fileMenu.Items.Add(MenuItem("Импорт Intel HEX…", "Ctrl+I", ImportHex));
                 _fileMenu.Items.Add(MenuItem("Экспорт Intel HEX…", "Ctrl+E", ExportHex));
+                _fileMenu.Items.Add(MenuItem("Импорт BIN…", "Ctrl+Alt+I", ImportBinary));
+                _fileMenu.Items.Add(MenuItem("Экспорт BIN…", "Ctrl+Alt+E", ExportBinary));
+                _fileMenu.Items.Add(MenuItem("Импорт .580…", "Ctrl+Shift+I", Import580));
+                _fileMenu.Items.Add(MenuItem("Экспорт .580…", "Ctrl+Shift+E", Export580));
+                _fileMenu.Items.Add(new ToolStripSeparator());
+                _profileMenuItem = MenuItem("Профиль памяти…", "Ctrl+Shift+P", EditProfile);
+                _fileMenu.Items.Add(_profileMenuItem);
                 _fileMenu.Items.Add(new ToolStripSeparator());
                 _fileMenu.Items.Add(MenuItem("Сохранить состояние…", "Ctrl+Shift+S", SaveState));
                 _fileMenu.Items.Add(MenuItem("Загрузить состояние…", "Ctrl+Shift+O", LoadState));
@@ -81,6 +89,7 @@ namespace MikroLab.App
                 _fileMenu.Items.Add(MenuItem("Справка", "F1", ShowHelp));
             }
 
+            _profileMenuItem.Text = "Профиль · " + _host.Profile.Name + "…";
             _fileMenu.Show(_fileButton, new Point(0, _fileButton.Height + 2));
         }
 
@@ -112,8 +121,8 @@ namespace MikroLab.App
                 try
                 {
                     _host.ImportHex(dialog.FileName);
+                    _studio.HostExternalProgramLoaded();
                     PumpUi();
-                    _studio.UpdateFromSnapshot(_host.Snapshot());
                 }
                 catch (Exception ex)
                 {
@@ -139,6 +148,107 @@ namespace MikroLab.App
                 {
                     ShowFileError("Не удалось экспортировать Intel HEX", ex);
                 }
+            }
+        }
+
+        // ------------------------------------------------------------------ raw BIN images
+
+        private void ImportBinary()
+        {
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Импорт бинарного образа";
+                dialog.Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*";
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    _host.ImportBinary(dialog.FileName);
+                    _studio.HostExternalProgramLoaded();
+                    PumpUi();
+                }
+                catch (Exception ex)
+                {
+                    ShowFileError("Не удалось импортировать BIN", ex);
+                }
+            }
+        }
+
+        private void ExportBinary()
+        {
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Title = "Экспорт бинарного образа";
+                dialog.Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*";
+                dialog.FileName = "program.bin";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    _host.ExportBinary(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    ShowFileError("Не удалось экспортировать BIN", ex);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------ .580 images
+
+        private void Import580()
+        {
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Импорт снимка КР580 (.580)";
+                dialog.Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*";
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    _host.Import580(dialog.FileName);
+                    _studio.HostExternalProgramLoaded();
+                    PumpUi();
+                }
+                catch (Exception ex)
+                {
+                    ShowFileError("Не удалось импортировать .580", ex);
+                }
+            }
+        }
+
+        private void Export580()
+        {
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Title = "Экспорт снимка КР580 (.580)";
+                dialog.Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*";
+                dialog.FileName = "program.580";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                try
+                {
+                    _host.Export580(dialog.FileName);
+                }
+                catch (Exception ex)
+                {
+                    ShowFileError("Не удалось экспортировать .580", ex);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------ profile
+
+        private void EditProfile()
+        {
+            using (var dialog = new ProfileDialog(_host.Profile))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Result == null) return;
+
+                _studio.HostApplyProfile(dialog.Result);
+                PumpUi();
             }
         }
 
@@ -176,8 +286,8 @@ namespace MikroLab.App
                 try
                 {
                     _host.LoadState(dialog.FileName);
+                    _studio.HostExternalProgramLoaded();
                     PumpUi();
-                    _studio.UpdateFromSnapshot(_host.Snapshot());
                 }
                 catch (Exception ex)
                 {
