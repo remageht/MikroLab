@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MikroLab.Cli</RootNamespace>
+    <AssemblyName>MikroLab.Cli</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MikroLab.Core\MikroLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>

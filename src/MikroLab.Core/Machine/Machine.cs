@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MikroLab.Core.Cpu;
 using MikroLab.Core.Devices;
 using MikroLab.Core.Memory;
@@ -84,6 +85,16 @@ namespace MikroLab.Core.Machine
         public MachineSnapshot Capture()
         {
             var cpuState = Cpu.State;
+            IReadOnlyList<ushort> stack = Cpu.GetCallStack();
+            var callStack = new ushort[stack.Count];
+            for (int i = 0; i < stack.Count; i++)
+            {
+                callStack[i] = stack[i];
+            }
+
+            bool halted = State == RunState.Halted ||
+                (Cpu is ExtendedCpu extended && extended.IsHalted);
+
             return new MachineSnapshot
             {
                 A = cpuState.A,
@@ -100,6 +111,8 @@ namespace MikroLab.Core.Machine
                 Cycles = cpuState.Cycles,
                 Flags = cpuState.Flags,
                 CallStackDepth = Cpu.CallStackDepth,
+                CallStack = callStack,
+                Halted = halted,
 
                 PpiLamps = Ppi.Lamps,
                 PpiControlWord = Ppi.ControlWord,
@@ -156,7 +169,27 @@ namespace MikroLab.Core.Machine
                     Analog.SetChannel(i, snapshot.AnalogVoltages[i]);
             }
             Analog.SelectedMuxChannel = snapshot.SelectedAnalogChannel;
-            this.State = snapshot.State;
+
+            if (Cpu is ExtendedCpu extended)
+            {
+                extended.RestoreDebugState(snapshot.CallStack, snapshot.Halted);
+            }
+
+            // A loaded snapshot has no execution thread behind it. Never report
+            // Running for a machine that is not actually executing, and let HLT
+            // win over any stale run state.
+            if (snapshot.Halted)
+            {
+                this.State = RunState.Halted;
+            }
+            else if (snapshot.State == RunState.Running)
+            {
+                this.State = RunState.Paused;
+            }
+            else
+            {
+                this.State = snapshot.State;
+            }
         }
     }
 }

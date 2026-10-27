@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  windows:
+    name: Windows (full solution)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build solution
+        run: dotnet build MikroLab.sln -c Release -v minimal
+      - name: Run tests
+        run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
+      - name: CLI smoke check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
+
+  cross-platform:
+    name: ${{ matrix.os }} (Core + CLI + tests)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build Core
+        run: dotnet build src/MikroLab.Core/MikroLab.Core.csproj -c Release -v minimal
+      - name: Build CLI
+        run: dotnet build src/MikroLab.Cli/MikroLab.Cli.csproj -c Release -v minimal
+      - name: Build tests
+        run: dotnet build tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release -v minimal
+      - name: Run tests
+        run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
+      - name: CLI smoke check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version

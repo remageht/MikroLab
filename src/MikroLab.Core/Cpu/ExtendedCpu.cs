@@ -39,6 +39,7 @@ namespace MikroLab.Core.Cpu
         public CpuState State { get; }
         public CpuProfile Profile => CpuProfile.Extended;
         public int CallStackDepth => _callStack.Count;
+        public bool IsHalted => _halted;
 
         public ExtendedCpu(
             IMemory memory,
@@ -63,6 +64,23 @@ namespace MikroLab.Core.Cpu
         public IReadOnlyList<ushort> GetCallStack()
         {
             return _callStack.ToArray();
+        }
+
+        /// <summary>
+        /// Restores the debug call stack and the HLT latch. The stack is given
+        /// top first, matching <see cref="GetCallStack"/>.
+        /// </summary>
+        public void RestoreDebugState(IReadOnlyList<ushort> callStack, bool halted)
+        {
+            _callStack.Clear();
+            if (callStack != null)
+            {
+                for (int i = callStack.Count - 1; i >= 0; i--)
+                {
+                    _callStack.Push(callStack[i]);
+                }
+            }
+            _halted = halted;
         }
 
         public void Reset()

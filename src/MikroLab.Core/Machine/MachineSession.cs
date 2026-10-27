@@ -13,6 +13,9 @@ namespace MikroLab.Core.Machine
     /// </summary>
     public sealed class MachineSession : IDisposable
     {
+        private const int StopTimeoutMilliseconds = 1000;
+        private const int PacingChunkMilliseconds = 5;
+
         private readonly Machine _machine;
         private readonly object _lock = new object();
         private readonly HashSet<ushort> _breakpoints = new HashSet<ushort>();
@@ -23,6 +26,7 @@ namespace MikroLab.Core.Machine
         private volatile MachineSnapshot _lastSnapshot;
         private int _skipBreakpointOnce = -1;
         private int _breakpointAddress = -1;
+        private int _targetInstructionsPerSecond;
 
         public Machine Machine => _machine;
         public RunState State => _machine.State;
@@ -56,6 +60,23 @@ namespace MikroLab.Core.Machine
         /// <summary>Instructions executed between timing sleeps and snapshot checks.</summary>
         public int InstructionsPerSlice { get; set; } = 2000;
 
+        /// <summary>
+        /// Target execution rate in instructions per second. Zero disables the
+        /// rate limit (use <see cref="ThrottleLikeOriginal"/> for the original
+        /// 5 ms pacing). The worker adapts the slice size and sleeps in short
+        /// chunks, so pause and reset stay responsive.
+        /// </summary>
+        public int TargetInstructionsPerSecond
+        {
+            get => _targetInstructionsPerSecond;
+            set
+            {
+                if (value < 0)
+                    throw new ArgumentOutOfRangeException(nameof(value));
+                _targetInstructionsPerSecond = value;
+            }
+        }
+
         public MachineSession(Machine machine)
         {
             _machine = machine ?? throw new ArgumentNullException(nameof(machine));
@@ -77,18 +98,23 @@ namespace MikroLab.Core.Machine
 
         public void Run()
         {
+            ThrowIfDisposed();
+
             lock (_lock)
             {
                 if (_isRunning) return;
 
-                // When the user resumes from a breakpoint, execute the
-                // instruction under the PC once instead of immediately
-                // stopping on the same breakpoint again.
-                _skipBreakpointOnce = _machine.Cpu.State.PC;
+                // Resume from a breakpoint at the current PC: execute the
+                // instruction under PC once instead of stopping on the same
+                // breakpoint again. A fresh run must still stop there.
+                int currentPc = _machine.Cpu.State.PC;
+                _skipBreakpointOnce = _breakpointAddress == currentPc ? currentPc : -1;
                 _breakpointAddress = -1;
                 _machine.State = RunState.Running;
                 _isRunning = true;
                 _shouldStop = false;
+
+                ClearClockStop();
 
                 _runThread = new Thread(RunWorker)
                 {
@@ -101,25 +127,52 @@ namespace MikroLab.Core.Machine
 
         public void Pause()
         {
+            if (!_isRunning) return;
+
+            // Set the stop flag and interrupt a monitor delay before waiting
+            // for the machine lock: the worker holds that lock while the
+            // delay is in progress.
+            _shouldStop = true;
+            RequestClockStop();
+
             lock (_lock)
             {
                 if (!_isRunning) return;
                 _shouldStop = true;
             }
 
-            _runThread?.Join(500);
+            Thread worker = _runThread;
+            if (worker == Thread.CurrentThread)
+            {
+                // Called from a snapshot handler on the execution thread:
+                // the worker exits on its own and publishes the final state.
+                return;
+            }
+
+            if (worker != null && !worker.Join(StopTimeoutMilliseconds))
+            {
+                // Never pretend to be paused while the worker is still alive.
+                ExecutionError?.Invoke("Поток выполнения не остановился за " +
+                    StopTimeoutMilliseconds + " мс.");
+                return;
+            }
 
             lock (_lock)
             {
-                _machine.State = RunState.Paused;
+                if (_machine.State == RunState.Running)
+                {
+                    _machine.State = RunState.Paused;
+                    _breakpointAddress = -1;
+                }
                 _isRunning = false;
-                _breakpointAddress = -1;
             }
             PublishSnapshot();
         }
 
         public void Step()
         {
+            ThrowIfDisposed();
+
             if (_isRunning)
             {
                 Pause();
@@ -138,15 +191,36 @@ namespace MikroLab.Core.Machine
 
         public void Reset(ResetKind kind = ResetKind.Soft)
         {
+            ThrowIfDisposed();
+
+            bool wasRunning;
+            if (_isRunning)
+            {
+                // Same ordering as Pause: set the stop flag and abort a monitor
+                // delay before trying to acquire a lock held by the step.
+                _shouldStop = true;
+                RequestClockStop();
+            }
+
             lock (_lock)
             {
-                if (_isRunning)
+                wasRunning = _isRunning;
+                if (wasRunning)
                 {
                     _shouldStop = true;
                 }
             }
 
-            _runThread?.Join(500);
+            if (wasRunning)
+            {
+                Thread worker = _runThread;
+                if (worker != null && worker != Thread.CurrentThread &&
+                    !worker.Join(StopTimeoutMilliseconds))
+                {
+                    ExecutionError?.Invoke("Сброс отменён: поток выполнения не остановился.");
+                    return;
+                }
+            }
 
             lock (_lock)
             {
@@ -163,6 +237,8 @@ namespace MikroLab.Core.Machine
         /// <summary>Replaces the breakpoint set. Thread-safe.</summary>
         public void SetBreakpoints(IEnumerable<ushort> addresses)
         {
+            ThrowIfDisposed();
+
             lock (_lock)
             {
                 _breakpoints.Clear();
@@ -218,6 +294,7 @@ namespace MikroLab.Core.Machine
         /// </summary>
         public void WithMachine(Action<Machine> action)
         {
+            ThrowIfDisposed();
             if (action == null) throw new ArgumentNullException(nameof(action));
 
             lock (_lock)
@@ -252,6 +329,9 @@ namespace MikroLab.Core.Machine
         {
             var stopwatch = Stopwatch.StartNew();
             long lastSnapshotTime = 0;
+            long pacedInstructions = 0;
+            long paceStartMilliseconds = 0;
+            int paceTarget = 0;
 
             try
             {
@@ -259,10 +339,19 @@ namespace MikroLab.Core.Machine
                 {
                     bool canContinue = true;
                     bool breakpointHit = false;
+                    int executed = 0;
+                    int target = TargetInstructionsPerSecond;
+                    int slice = Math.Max(1, InstructionsPerSlice);
+                    if (target > 0)
+                    {
+                        // Aim for ~5 ms of work per slice so rate changes and
+                        // pause requests are observed quickly.
+                        slice = Math.Max(1, Math.Min(slice, target / 200));
+                    }
 
                     lock (_lock)
                     {
-                        for (int i = 0; i < InstructionsPerSlice; i++)
+                        for (int i = 0; i < slice; i++)
                         {
                             if (_shouldStop) break;
 
@@ -278,6 +367,7 @@ namespace MikroLab.Core.Machine
 
                             _skipBreakpointOnce = -1;
                             canContinue = _machine.Step();
+                            executed++;
                             if (!canContinue)
                             {
                                 _machine.State = RunState.Halted;
@@ -293,20 +383,36 @@ namespace MikroLab.Core.Machine
                         lastSnapshotTime = now;
                     }
 
-                    if (breakpointHit)
+                    if (breakpointHit || !canContinue)
                         break;
 
-                    if (!canContinue)
-                        break;
-
-                    if (ThrottleLikeOriginal)
+                    if (target > 0)
                     {
-                        // Sleep 5ms every slice of instructions to match original responsiveness & timing
-                        Thread.Sleep(5);
+                        if (target != paceTarget)
+                        {
+                            paceTarget = target;
+                            pacedInstructions = 0;
+                            paceStartMilliseconds = stopwatch.ElapsedMilliseconds;
+                        }
+
+                        pacedInstructions += executed;
+                        long targetMs = paceStartMilliseconds +
+                            pacedInstructions * 1000L / target;
+                        SleepUntil(targetMs, stopwatch);
                     }
                     else
                     {
-                        Thread.Yield();
+                        paceTarget = 0;
+                        pacedInstructions = 0;
+                        if (ThrottleLikeOriginal)
+                        {
+                            // Sleep 5ms every slice of instructions to match original responsiveness & timing.
+                            Thread.Sleep(5);
+                        }
+                        else
+                        {
+                            Thread.Yield();
+                        }
                     }
                 }
             }
@@ -321,8 +427,25 @@ namespace MikroLab.Core.Machine
                     _isRunning = false;
                     if (_machine.State == RunState.Running)
                         _machine.State = RunState.Paused;
+                    if (ReferenceEquals(_runThread, Thread.CurrentThread))
+                        _runThread = null;
                 }
                 PublishSnapshot();
+            }
+        }
+
+        /// <summary>
+        /// Sleeps until the cumulative target time is reached, in short chunks
+        /// so a pause request is never ignored for long.
+        /// </summary>
+        private void SleepUntil(long targetMilliseconds, Stopwatch stopwatch)
+        {
+            while (!_shouldStop && !_isDisposed)
+            {
+                long remaining = targetMilliseconds - stopwatch.ElapsedMilliseconds;
+                if (remaining <= 0) return;
+
+                Thread.Sleep((int)Math.Min(remaining, PacingChunkMilliseconds));
             }
         }
 
@@ -342,7 +465,31 @@ namespace MikroLab.Core.Machine
             if (_isDisposed) return;
             _isDisposed = true;
             _shouldStop = true;
-            _runThread?.Join(500);
+            RequestClockStop();
+
+            Thread worker = _runThread;
+            if (worker != null && worker != Thread.CurrentThread)
+            {
+                worker.Join(StopTimeoutMilliseconds * 2);
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(MachineSession));
+        }
+
+        private void RequestClockStop()
+        {
+            if (_machine.Clock is IInterruptibleClock clock)
+                clock.RequestStop();
+        }
+
+        private void ClearClockStop()
+        {
+            if (_machine.Clock is IInterruptibleClock clock)
+                clock.ClearStop();
         }
     }
 }

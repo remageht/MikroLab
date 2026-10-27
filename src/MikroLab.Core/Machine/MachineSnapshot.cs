@@ -23,6 +23,12 @@ namespace MikroLab.Core.Machine
         public FlagReg Flags { get; init; }
         public int CallStackDepth { get; init; }
 
+        /// <summary>Debug call stack, top first. Empty for legacy snapshots.</summary>
+        public ushort[] CallStack { get; init; } = Array.Empty<ushort>();
+
+        /// <summary>True when the CPU is latched on HLT.</summary>
+        public bool Halted { get; init; }
+
         // Devices
         public byte PpiLamps { get; init; }
         public byte PpiControlWord { get; init; }

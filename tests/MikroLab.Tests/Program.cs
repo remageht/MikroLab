@@ -14,6 +14,8 @@ namespace MikroLab.Tests
             failures += Run("CoreTests", CoreTests.RunAll);
             failures += Run("AssemblerTests", AssemblerTests.RunAll);
             failures += Run("ExtendedCpuTests", ExtendedCpuTests.RunAll);
+            failures += Run("FormatTests", FormatTests.RunAll);
+            failures += Run("SessionRegressionTests", SessionRegressionTests.RunAll);
             failures += Run("StudioIntegrationTests", StudioIntegrationTests.RunAll);
 
             Console.WriteLine("=================================================");
