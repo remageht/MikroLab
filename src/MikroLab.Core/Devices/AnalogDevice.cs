@@ -13,12 +13,10 @@ namespace MikroLab.Core.Devices
         public const int PortAdc = 0xFE;
 
         private readonly IAnalogSource _analog;
-        private readonly IMemory _legacyMemory;
 
-        public AnalogDevice(IAnalogSource analog, IMemory legacyMemory = null)
+        public AnalogDevice(IAnalogSource analog)
         {
             _analog = analog ?? throw new ArgumentNullException(nameof(analog));
-            _legacyMemory = legacyMemory;
         }
 
         public string Name => "Analog mux / ADC";
@@ -33,7 +31,6 @@ namespace MikroLab.Core.Devices
             if (port == PortMux)
             {
                 _analog.SelectedMuxChannel = (byte)(value & 0x03);
-                _legacyMemory?.WriteByte((ushort)port, value);
             }
         }
 

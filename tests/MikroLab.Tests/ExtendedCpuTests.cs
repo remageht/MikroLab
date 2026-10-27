@@ -944,7 +944,7 @@ namespace MikroLab.Tests
             SetFlags(machine, false, false, false, false, true);
             Load(machine, 0x8000, 0xDB, 0xFA); // IN FAh
             StepOk(machine);
-            Assert(machine.Cpu.State.A == 0x0B, $"IN FAh should read tumblers, got {machine.Cpu.State.A:X2}");
+            Assert(machine.Cpu.State.A == 0x05, $"IN FAh should read PA0..PA2, got {machine.Cpu.State.A:X2}");
             Assert(machine.Cpu.State.PC == 0x8002, "IN should be two bytes long");
             AssertFlags(machine, false, false, false, false, true, "IN must not change flags");
 
@@ -961,65 +961,78 @@ namespace MikroLab.Tests
             Assert(machine.Cpu.State.A == 0x66, $"IN FEh should read ADC 102, got {machine.Cpu.State.A}");
             Assert(machine.Cpu.State.PC == 0x8006, "IN FEh should be two bytes long");
 
+            // Configure PA=input, PB/PC=output before driving the lamps.
+            machine.Ppi.WriteControl(0x90);
+            machine.Memory.WriteByte(0x0001, 0x00);
             machine.Cpu.State.A = 0x55;
-            Load(machine, 0x8006, 0xD3, 0x01); // OUT 01h
+            Load(machine, 0x8006, 0xD3, 0x01); // OUT 01h (legacy PB alias)
             StepOk(machine);
-            Assert(machine.Ppi.Lamps == 0x55, "OUT 01h should set lamps");
-            Assert(machine.Memory.ReadByte(0x0001) == 0x55, "OUT should also write the mapped memory cell");
+            Assert(machine.Ppi.PortB == 0x55, "OUT 01h should write port B");
+            Assert(machine.Memory.ReadByte(0x0001) == 0x00,
+                "OUT must use the I/O bus and leave the memory cell untouched");
             Assert(machine.Cpu.State.PC == 0x8008, "OUT should be two bytes long");
 
             machine.Cpu.State.A = 0x66;
             Load(machine, 0x8008, 0xD3, 0xF9); // OUT F9h
             StepOk(machine);
-            Assert(machine.Ppi.Lamps == 0x66, "OUT F9h should set lamps");
+            Assert(machine.Ppi.PortB == 0x66, "OUT F9h should write port B");
 
-            machine.Cpu.State.A = 0x42;
-            Load(machine, 0x800A, 0xD3, 0x02); // OUT 02h
+            machine.Cpu.State.A = 0x90;
+            Load(machine, 0x800A, 0xD3, 0xFB); // OUT FBh
             StepOk(machine);
-            Assert(machine.Ppi.ControlWord == 0x42, "OUT 02h should set the PPI control word");
+            Assert(machine.Ppi.ControlWord == 0x90, "OUT FBh should set the PPI control word");
+            Assert(machine.Ppi.PortAInput, "control word 90h must make port A an input");
+            Assert(!machine.Ppi.PortBInput, "control word 90h must make port B an output");
 
+            machine.Memory.WriteByte(0x00FD, 0x00);
             machine.Cpu.State.A = 0x07;
             Load(machine, 0x800C, 0xD3, 0xFD); // OUT FDh
             StepOk(machine);
             Assert(machine.Analog.SelectedMuxChannel == 3, "OUT FDh should select channel 3 (b & 3)");
-            Assert(machine.Memory.ReadByte(0x00FD) == 0x07, "OUT FDh should also write memory");
+            Assert(machine.Memory.ReadByte(0x00FD) == 0x00,
+                "OUT FDh must not write the memory cell");
 
-            Pass("IN/OUT ports and legacy device mapping");
+            Pass("IN/OUT ports, PPI control word and legacy device mapping");
         }
 
         public static void Test_MemoryMappedDevices()
         {
             Machine machine = NewMachine();
-            machine.Ppi.InputWord = 0x5A;
+            machine.Ppi.InputA = 0x5A;
             Load(machine, 0x8000, 0x3A, 0xFA, 0x00); // LDA 00FAh
             StepOk(machine);
-            Assert(machine.Cpu.State.A == 0x5A, "LDA 00FAh should return InputWord");
-            Assert(machine.Ppi.InputWord == 0xFF, "reading 00FAh should reset InputWord to FFh");
+            Assert(machine.Cpu.State.A == 0x5A, "LDA 00FAh should read port A");
+            Assert(machine.Ppi.InputA == 0x5A, "reading 00FAh must not consume the port A pins");
+
+            Load(machine, 0x8003, 0x3A, 0xFA, 0x00); // LDA 00FAh again
+            StepOk(machine);
+            Assert(machine.Cpu.State.A == 0x5A, "a second read must return the same port A value");
 
             machine.Analog.SetChannel(2, 1.0);
             machine.Analog.SelectedMuxChannel = 2;
-            Load(machine, 0x8003, 0x3A, 0xFE, 0x00); // LDA 00FEh
+            Load(machine, 0x8006, 0x3A, 0xFE, 0x00); // LDA 00FEh
             StepOk(machine);
             Assert(machine.Cpu.State.A == 26, $"LDA 00FEh should return ADC 26, got {machine.Cpu.State.A}");
 
             machine.Cpu.State.A = 0x7E;
-            Load(machine, 0x8006, 0x32, 0xF8, 0x83); // STA 83F8h
+            Load(machine, 0x8009, 0x32, 0xF8, 0x83); // STA 83F8h
             StepOk(machine);
             Assert(machine.Memory.ReadByte(0x83F8) == 0x7E, "STA 83F8h should write memory");
             Assert(machine.Display.GetDigit(0) == 0x7E, "STA 83F8h should latch digit 0");
 
             machine.Cpu.State.A = 0x3F;
-            Load(machine, 0x8009, 0x32, 0xFF, 0x83); // STA 83FFh
+            Load(machine, 0x800C, 0x32, 0xFF, 0x83); // STA 83FFh
             StepOk(machine);
             Assert(machine.Display.GetDigit(7) == 0x3F, "STA 83FFh should latch digit 7");
 
+            machine.Ppi.WriteControl(0x90); // port B must be an output
             machine.Cpu.State.A = 0x5A;
-            Load(machine, 0x800C, 0x32, 0x01, 0x00); // STA 0001h
+            Load(machine, 0x800F, 0x32, 0x01, 0x00); // STA 0001h
             StepOk(machine);
-            Assert(machine.Ppi.Lamps == 0x5A, "STA 0001h should set lamps");
+            Assert(machine.Ppi.PortB == 0x5A, "STA 0001h should write port B (legacy lamps)");
 
             machine.Cpu.State.A = 0x02;
-            Load(machine, 0x800F, 0x32, 0xFD, 0x00); // STA 00FDh
+            Load(machine, 0x8012, 0x32, 0xFD, 0x00); // STA 00FDh
             StepOk(machine);
             Assert(machine.Analog.SelectedMuxChannel == 2, "STA 00FDh should select the analog channel");
 

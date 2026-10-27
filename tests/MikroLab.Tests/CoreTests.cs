@@ -190,16 +190,16 @@ namespace MikroLab.Tests
             machine.Memory.WriteByte(0x8001, 0xFA);
             machine.Cpu.State.PC = 0x8000;
 
-            machine.Ppi.Tumbler1 = true; // 9
-            machine.Ppi.Tumbler2 = false; // 0
-            machine.Ppi.Tumbler3 = true; // 3
+            machine.Ppi.Tumbler1 = true; // bit 0 → 1
+            machine.Ppi.Tumbler2 = false; // bit 1 → 0
+            machine.Ppi.Tumbler3 = true; // bit 2 → 4
 
             machine.Step();
 
-            // Formula: 1 | (9*1) | (5*0) | (3*1) = 1 | 9 | 3 = 11 (0x0B)
-            Assert(machine.Cpu.State.A == 11, $"Expected A=11 (1|9|3), got {machine.Cpu.State.A}");
+            // Honest PA0..PA2 lines: SA1 + 2*SA2 + 4*SA3 = 1 + 4 = 5.
+            Assert(machine.Cpu.State.A == 0x05, $"Expected A=05h, got {machine.Cpu.State.A:X2}");
 
-            Console.WriteLine("  [PASS] Test_LegacyCpu_QuirkParity_InFa_Tumblers (IN FAh bitwise OR formula)");
+            Console.WriteLine("  [PASS] Test_LegacyCpu_QuirkParity_InFa_Tumblers (IN FAh reads PA0..PA2)");
         }
     }
 }

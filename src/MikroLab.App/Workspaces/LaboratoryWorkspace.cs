@@ -216,7 +216,7 @@ namespace MikroLab.App.Workspaces
             boardLayout.Controls.Add(indicatorsCard, 0, 0);
             boardLayout.SetColumnSpan(indicatorsCard, 2);
 
-            var ledsCard = MakeBoardCard("СВЕТОДИОДЫ · ПОРТ A");
+            var ledsCard = MakeBoardCard("СВЕТОДИОДЫ · ПОРТ B (F9h)");
             _lamps = new LedBar { Dock = DockStyle.Fill, Height = 58 };
             _portA = AppTheme.Label("00h", AppTheme.Text, AppTheme.MonoSmall);
             _portA.Dock = DockStyle.Bottom;
@@ -237,7 +237,7 @@ namespace MikroLab.App.Workspaces
             _flags.AutoSize = false;
             _flags.Height = 26;
             _flags.ForeColor = AppTheme.TextMuted;
-            _portB = AppTheme.Label("FAh → 00h", AppTheme.TextMuted, AppTheme.MonoSmall);
+            _portB = AppTheme.Label("A[FAh] 00h · C[F8h] 00h · УПР[FBh] 9Bh", AppTheme.TextMuted, AppTheme.MonoSmall);
             _portB.Dock = DockStyle.Top;
             _portB.AutoSize = false;
             _portB.Height = 22;
@@ -396,9 +396,12 @@ namespace MikroLab.App.Workspaces
             try
             {
                 _display.SetDigits(snapshot.Digits);
-                _lamps.SetValue(snapshot.PpiLamps);
-                _portA.Text = "Порт A · " + snapshot.PpiLamps.ToString("X2") + "h";
-                _portB.Text = "FAh → " + snapshot.PpiInputWord.ToString("X2") + "h";
+                _lamps.SetValue(snapshot.PpiEffectiveB);
+                _portA.Text = "B[F9h] = " + snapshot.PpiEffectiveB.ToString("X2") + "h";
+                _portB.Text = "A[FAh] " + snapshot.PpiEffectiveA.ToString("X2") +
+                              "h · C[F8h] " + snapshot.PpiEffectiveC.ToString("X2") +
+                              "h · УПР[FBh] " + snapshot.PpiControlWord.ToString("X2") +
+                              "h · режим A" + (int)snapshot.PpiModeA + "/B" + (int)snapshot.PpiModeB;
                 _tumblers[0].Checked = snapshot.Tumbler1;
                 _tumblers[1].Checked = snapshot.Tumbler2;
                 _tumblers[2].Checked = snapshot.Tumbler3;

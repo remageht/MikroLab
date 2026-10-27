@@ -12,7 +12,8 @@ namespace MikroLab.Core.Machine
         public MappedMemory AddressSpace { get; }
         public IoBus IoBus { get; }
         public ICpu Cpu { get; }
-        public PpiState Ppi { get; }
+        public Ppi8255 Ppi { get; }
+        public PpiPortMap PpiMap { get; }
         public DisplayState Display { get; }
         public AnalogState Analog { get; }
 
@@ -26,7 +27,8 @@ namespace MikroLab.Core.Machine
             ISound sound = null,
             IClock clock = null,
             IDiagnostics diagnostics = null,
-            CpuProfile profile = CpuProfile.Legacy)
+            CpuProfile profile = CpuProfile.Legacy,
+            PpiPortMap ppiMap = null)
         {
             Sound = sound;
             Clock = clock;
@@ -34,33 +36,16 @@ namespace MikroLab.Core.Machine
 
             Memory = new NibbleMemory();
             AddressSpace = new MappedMemory(Memory);
-            Ppi = new PpiState();
+            Ppi = new Ppi8255();
+            PpiMap = (ppiMap ?? PpiPortMap.Default).Clone();
+            PpiMap.Validate();
             Display = new DisplayState();
             Analog = new AnalogState();
             IoBus = new IoBus();
 
-            // Legacy VNTU devices are registered in both address spaces. The
-            // CPUs only see the buses, never these concrete addresses.
-            var ppiDevice = new LegacyPpiDevice(Ppi, Memory);
-            IoBus.Register(ppiDevice, LegacyPpiDevice.PortLamps, LegacyPpiDevice.PortControl);
-            IoBus.Register(ppiDevice, LegacyPpiDevice.PortLampsAlias, LegacyPpiDevice.PortInput);
-            AddressSpace.Register(
-                ppiDevice,
-                LegacyPpiDevice.PortInput,
-                LegacyPpiDevice.PortInput,
-                MemoryAccess.Read);
-            AddressSpace.Register(
-                ppiDevice,
-                LegacyPpiDevice.PortLamps,
-                LegacyPpiDevice.PortControl,
-                MemoryAccess.Write);
-            AddressSpace.Register(
-                ppiDevice,
-                LegacyPpiDevice.PortLampsAlias,
-                LegacyPpiDevice.PortLampsAlias,
-                MemoryAccess.Write);
+            RegisterPpiDevices();
 
-            var analogDevice = new AnalogDevice(Analog, Memory);
+            var analogDevice = new AnalogDevice(Analog);
             IoBus.Register(analogDevice, AnalogDevice.PortMux, AnalogDevice.PortAdc);
             AddressSpace.Register(
                 analogDevice,
@@ -90,6 +75,41 @@ namespace MikroLab.Core.Machine
             else
             {
                 Cpu = new LegacyCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
+            }
+        }
+
+        private void RegisterPpiDevices()
+        {
+            var device = new Ppi8255Device(Ppi, PpiMap);
+
+            // IN/OUT bus: four primary ports plus optional VNTU aliases.
+            IoBus.Register(device, PpiMap.PortA, PpiMap.PortA);
+            IoBus.Register(device, PpiMap.PortB, PpiMap.PortB);
+            IoBus.Register(device, PpiMap.PortC, PpiMap.PortC);
+            IoBus.Register(device, PpiMap.Control, PpiMap.Control);
+            if (PpiMap.LegacyPortB >= 0)
+            {
+                IoBus.Register(device, PpiMap.LegacyPortB, PpiMap.LegacyPortB);
+            }
+            if (PpiMap.LegacyControl >= 0)
+            {
+                IoBus.Register(device, PpiMap.LegacyControl, PpiMap.LegacyControl);
+            }
+
+            // Memory-mapped compatibility windows. Port A is readable at its
+            // primary address; the other primary ports and legacy aliases are
+            // write-only so program data reads are not hijacked unnecessarily.
+            AddressSpace.Register(device, PpiMap.PortA, PpiMap.PortA, MemoryAccess.ReadWrite);
+            AddressSpace.Register(device, PpiMap.PortB, PpiMap.PortB, MemoryAccess.Write);
+            AddressSpace.Register(device, PpiMap.PortC, PpiMap.PortC, MemoryAccess.Write);
+            AddressSpace.Register(device, PpiMap.Control, PpiMap.Control, MemoryAccess.Write);
+            if (PpiMap.LegacyPortB >= 0)
+            {
+                AddressSpace.Register(device, PpiMap.LegacyPortB, PpiMap.LegacyPortB, MemoryAccess.Write);
+            }
+            if (PpiMap.LegacyControl >= 0)
+            {
+                AddressSpace.Register(device, PpiMap.LegacyControl, PpiMap.LegacyControl, MemoryAccess.Write);
             }
         }
 
@@ -148,9 +168,20 @@ namespace MikroLab.Core.Machine
                 CallStack = callStack,
                 Halted = halted,
 
-                PpiLamps = Ppi.Lamps,
+                PpiPortA = Ppi.PortA,
+                PpiPortB = Ppi.PortB,
+                PpiPortC = Ppi.PortC,
                 PpiControlWord = Ppi.ControlWord,
-                PpiInputWord = Ppi.InputWord,
+                PpiInputA = Ppi.InputA,
+                PpiInputB = Ppi.InputB,
+                PpiInputC = Ppi.InputC,
+                PpiModeA = Ppi.GroupAMode,
+                PpiModeB = Ppi.GroupBMode,
+                PpiPortAInput = Ppi.PortAInput,
+                PpiPortBInput = Ppi.PortBInput,
+                PpiPortCUpperInput = Ppi.PortCUpperInput,
+                PpiPortCLowerInput = Ppi.PortCLowerInput,
+                PpiPortABidirectional = Ppi.PortABidirectional,
                 Tumbler1 = Ppi.Tumbler1,
                 Tumbler2 = Ppi.Tumbler2,
                 Tumbler3 = Ppi.Tumbler3,
@@ -184,12 +215,14 @@ namespace MikroLab.Core.Machine
             Cpu.State.Cycles = snapshot.Cycles;
             Cpu.State.Flags = snapshot.Flags;
 
-            Ppi.Lamps = snapshot.PpiLamps;
-            Ppi.ControlWord = snapshot.PpiControlWord;
-            Ppi.InputWord = snapshot.PpiInputWord;
-            Ppi.Tumbler1 = snapshot.Tumbler1;
-            Ppi.Tumbler2 = snapshot.Tumbler2;
-            Ppi.Tumbler3 = snapshot.Tumbler3;
+            Ppi.RestoreState(
+                snapshot.PpiPortA,
+                snapshot.PpiPortB,
+                snapshot.PpiPortC,
+                snapshot.PpiControlWord,
+                snapshot.PpiInputA,
+                snapshot.PpiInputB,
+                snapshot.PpiInputC);
 
             if (snapshot.Digits != null)
             {

@@ -41,8 +41,10 @@ namespace MikroLab.Core.Assembler
 
         ORG 8000h
 
-START:  MVI A, 00h
-        OUT 01h
+START:  MVI A, 90h        ; ВВ55: PA — вход, PB/PC — выход
+        OUT 0FBh          ; записать управляющее слово
+        MVI A, 00h
+        OUT 0F9h          ; погасить лампы порта B
         HLT
 
         END
@@ -50,17 +52,19 @@ START:  MVI A, 00h
 
         public const string RunningLight =
 @"; MikroLab Studio · пример: бегущие огни
-; Лампы подключены к порту 01h (ВВ55, порт A)
+; Лампы подключены к порту B ВВ55 (OUT F9h).
 ;
 ; F7 — собрать, F5 — пуск, F6 — пауза, F8 — шаг,
 ; F9 — точка останова, Ctrl+R — сброс.
 
         ORG 8000h
 
-START:  MVI A, 01h        ; начальный огонь
+START:  MVI A, 90h        ; PA — вход, PB/PC — выход
+        OUT 0FBh          ; управляющее слово ВВ55
+        MVI A, 01h        ; начальный огонь
         MVI B, 08h        ; восемь позиций
 
-SHIFT:  OUT 01h           ; вывести A на лампы
+SHIFT:  OUT 0F9h          ; вывести A на лампы порта B
         CALL DELAY        ; небольшая задержка
         RLC               ; сдвинуть огонь влево
         DCR B
@@ -79,9 +83,12 @@ DLOOP:  DCR C
         public const string SumOneToFive =
 @"; MikroLab Studio · пример: сумма 1+2+3+4+5
 ; Результат (0Fh) записывается в память 8200h
-; и выводится на лампы порта 01h.
+; и выводится на лампы порта B (OUT F9h).
 
         ORG 8000h
+
+        MVI A, 90h        ; PA — вход, PB/PC — выход
+        OUT 0FBh          ; управляющее слово ВВ55
 
         MVI A, 00h        ; аккумулятор = 0
         MVI B, 05h        ; слагаемое = 5
@@ -91,7 +98,7 @@ LOOP:   ADD B             ; A = A + B
         JNZ LOOP          ; повторять, пока B != 0
 
         STA 8200h         ; сохранить сумму в память
-        OUT 01h           ; показать сумму на лампах
+        OUT 0F9h          ; показать сумму на лампах
         HLT               ; остановить процессор
 
         END
@@ -99,15 +106,18 @@ LOOP:   ADD B             ; A = A + B
 
         public const string TumblersToLamps =
 @"; MikroLab Studio · пример: переключатели → лампы
-; IN 0FAh читает состояние трёх переключателей,
-; OUT 01h выводит его на светодиоды.
+; IN 0FAh читает PA0..PA2 (SA1..SA3), OUT 0F9h выводит
+; значение на светодиоды порта B.
 ;
 ; Переключатели управляются на вкладке «Устройства».
 
         ORG 8000h
 
+        MVI A, 90h        ; PA — вход, PB/PC — выход
+        OUT 0FBh          ; управляющее слово ВВ55
+
 LOOP:   IN 0FAh           ; SA1..SA3 → A
-        OUT 01h           ; A → лампы
+        OUT 0F9h          ; A → лампы порта B
         JMP LOOP
 
         END

@@ -93,9 +93,7 @@ namespace MikroLab.App
                 machine.Cpu.Reset();
                 machine.State = RunState.Stopped;
                 machine.Display.Reset();
-                machine.Ppi.Lamps = 0;
-                machine.Ppi.InputWord = 0xFF;
-                machine.Ppi.ControlWord = 0xFF;
+                machine.Ppi.Reset();
 
                 for (int address = 0x8000; address <= 0x83FF; address++)
                 {

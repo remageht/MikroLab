@@ -132,7 +132,7 @@ namespace MikroLab.Tests
                 byte stored = 0;
                 session.WithMachine(machine => stored = machine.Memory.ReadByte(0x8200));
                 Check(stored == 0x0F, "Sum 1..5 must be stored at 8200h");
-                Check(session.Machine.Ppi.Lamps == 0x0F, "Sum must be shown on the lamp port");
+                Check(session.Machine.Ppi.PortB == 0x0F, "Sum must be shown on port B lamps");
             }
         }
 
@@ -151,11 +151,13 @@ namespace MikroLab.Tests
                     machine.Ppi.Tumbler3 = true;
                 });
 
-                session.Step();
-                session.Step();
+                session.Step(); // MVI A, 90h
+                session.Step(); // OUT FBh — configure PPI
+                session.Step(); // IN FAh
+                session.Step(); // OUT F9h
 
-                Check(session.Machine.Ppi.Lamps == 0x0F,
-                    "All tumblers must produce 1 | 9 | 5 | 3 = 0Fh on the lamps");
+                Check(session.Machine.Ppi.PortB == 0x07,
+                    "All tumblers must produce SA1 + 2*SA2 + 4*SA3 = 07h on port B");
             }
         }
 
@@ -179,7 +181,7 @@ namespace MikroLab.Tests
                 Check(session.Machine.Cpu.State.PC == shift, "PC must point at the breakpoint instruction");
 
                 session.Step();
-                Check(session.Machine.Ppi.Lamps == 0x01, "Stepping over OUT 01h must light the first lamp");
+                Check(session.Machine.Ppi.PortB == 0x01, "Stepping over OUT F9h must light the first lamp");
                 Check(session.Machine.Cpu.State.PC != shift, "PC must leave the breakpoint after one step");
                 Check(!session.IsPausedAtBreakpoint, "A manual step clears the breakpoint pause flag");
             }

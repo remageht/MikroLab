@@ -353,6 +353,8 @@ namespace MikroLab.App.Controls
         private readonly Label _portA;
         private readonly Label _portB;
         private readonly Label _portC;
+        private readonly Label _control;
+        private readonly Label _ppiMode;
         private readonly Label _adc;
         private readonly SevenSegmentDisplay _display;
         private readonly LedBar _lamps;
@@ -384,9 +386,21 @@ namespace MikroLab.App.Controls
 
             int row = 0;
             AddSection(stack, ref row, "ПОРТЫ ВВ55");
-            _portA = AddValueRow(stack, ref row, "Порт A · лампы 01h");
-            _portB = AddValueRow(stack, ref row, "Порт B · переключатели FAh");
-            _portC = AddValueRow(stack, ref row, "Порт C · управление 02h");
+            _portA = AddValueRow(stack, ref row, "Порт A · вход FAh");
+            _portB = AddValueRow(stack, ref row, "Порт B · лампы F9h");
+            _portC = AddValueRow(stack, ref row, "Порт C · стробы F8h");
+            _control = AddValueRow(stack, ref row, "Контроль · FBh");
+            _ppiMode = new Label
+            {
+                Text = "Режим A0/B0 · A вход · B выход · C выход/выход",
+                ForeColor = AppTheme.TextMuted,
+                Font = AppTheme.MonoSmall,
+                AutoSize = false,
+                Height = 38,
+                Dock = DockStyle.Top,
+                Margin = new Padding(0, 2, 0, 0)
+            };
+            AddControlRow(stack, ref row, _ppiMode);
 
             AddSection(stack, ref row, "ИНДИКАТОРЫ");
             _display = new SevenSegmentDisplay
@@ -510,6 +524,19 @@ namespace MikroLab.App.Controls
             stack.Controls.Add(control, 0, row++);
         }
 
+        private static string DescribePpi(MachineSnapshot snapshot)
+        {
+            string directionA = snapshot.PpiPortABidirectional
+                ? "двунаправленный"
+                : (snapshot.PpiPortAInput ? "вход" : "выход");
+            string directionB = snapshot.PpiPortBInput ? "вход" : "выход";
+            string upperC = snapshot.PpiPortCUpperInput ? "вход" : "выход";
+            string lowerC = snapshot.PpiPortCLowerInput ? "вход" : "выход";
+            return "Режим A" + (int)snapshot.PpiModeA + "/B" + (int)snapshot.PpiModeB +
+                   " · A " + directionA + " · B " + directionB +
+                   " · C " + upperC + "/" + lowerC;
+        }
+
         public void UpdateSnapshot(MachineSnapshot snapshot)
         {
             if (snapshot == null) return;
@@ -517,11 +544,13 @@ namespace MikroLab.App.Controls
             _syncing = true;
             try
             {
-                _portA.Text = snapshot.PpiLamps.ToString("X2") + "h";
-                _portB.Text = snapshot.PpiInputWord.ToString("X2") + "h";
-                _portC.Text = snapshot.PpiControlWord.ToString("X2") + "h";
+                _portA.Text = snapshot.PpiEffectiveA.ToString("X2") + "h";
+                _portB.Text = snapshot.PpiEffectiveB.ToString("X2") + "h";
+                _portC.Text = snapshot.PpiEffectiveC.ToString("X2") + "h";
+                _control.Text = snapshot.PpiControlWord.ToString("X2") + "h";
+                _ppiMode.Text = DescribePpi(snapshot);
                 _display.SetDigits(snapshot.Digits);
-                _lamps.SetValue(snapshot.PpiLamps);
+                _lamps.SetValue(snapshot.PpiEffectiveB);
 
                 _tumblers[0].Checked = snapshot.Tumbler1;
                 _tumblers[1].Checked = snapshot.Tumbler2;

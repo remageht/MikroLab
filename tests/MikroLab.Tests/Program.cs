@@ -13,6 +13,7 @@ namespace MikroLab.Tests
             int failures = 0;
             failures += Run("CoreTests", CoreTests.RunAll);
             failures += Run("BusTests", BusTests.RunAll);
+            failures += Run("Ppi8255Tests", Ppi8255Tests.RunAll);
             failures += Run("AssemblerTests", AssemblerTests.RunAll);
             failures += Run("ExtendedCpuTests", ExtendedCpuTests.RunAll);
             failures += Run("FormatTests", FormatTests.RunAll);
