@@ -7,8 +7,8 @@ namespace MikroLab.Core.Cpu
 {
     /// <summary>
     /// Complete Intel 8080 / KR580VM80A CPU with a real hardware stack and
-    /// documented flag behavior. Devices are still reached through the legacy
-    /// memory map so existing programs and the monitor routines keep working.
+    /// documented flag behavior. Memory and I/O devices are reached through
+    /// buses, so the CPU contains no board-specific port addresses.
     /// </summary>
     public sealed class ExtendedCpu : ICpu
     {
@@ -26,9 +26,7 @@ namespace MikroLab.Core.Cpu
         };
 
         private readonly IMemory _memory;
-        private readonly IPpiDevice _ppi;
-        private readonly IDisplaySink _display;
-        private readonly IAnalogSource _analog;
+        private readonly IIoBus _ioBus;
         private readonly ISound _sound;
         private readonly IClock _clock;
         private readonly IDiagnostics _diagnostics;
@@ -43,17 +41,13 @@ namespace MikroLab.Core.Cpu
 
         public ExtendedCpu(
             IMemory memory,
-            IPpiDevice ppi = null,
-            IDisplaySink display = null,
-            IAnalogSource analog = null,
+            IIoBus ioBus,
             ISound sound = null,
             IClock clock = null,
             IDiagnostics diagnostics = null)
         {
             _memory = memory ?? throw new ArgumentNullException(nameof(memory));
-            _ppi = ppi;
-            _display = display;
-            _analog = analog;
+            _ioBus = ioBus ?? throw new ArgumentNullException(nameof(ioBus));
             _sound = sound;
             _clock = clock;
             _diagnostics = diagnostics;
@@ -435,14 +429,14 @@ namespace MikroLab.Core.Cpu
                 case 0xD3:
                 {
                     byte port = ReadMemory(pc + 1);
-                    WriteMemory(port, State.A);
+                    _ioBus.WritePort(port, State.A);
                     State.PC = (ushort)(pc + 2);
                     return ExecuteResult.Continue;
                 }
 
                 // IN d8
                 case 0xDB:
-                    State.A = ReadPort(ReadMemory(pc + 1));
+                    State.A = _ioBus.ReadPort(ReadMemory(pc + 1));
                     State.PC = (ushort)(pc + 2);
                     return ExecuteResult.Continue;
 
@@ -588,44 +582,12 @@ namespace MikroLab.Core.Cpu
 
         private byte ReadMemory(int address)
         {
-            int addr = address & 0xFFFF;
-            if (addr == MemoryMap.PortInputWord && _ppi != null)
-            {
-                byte value = _ppi.InputWord;
-                _ppi.InputWord = 0xFF;
-                return value;
-            }
-            if (addr == MemoryMap.PortAdc && _analog != null)
-                return _analog.ReadAdc();
-            return _memory.ReadByte((ushort)addr);
+            return _memory.ReadByte((ushort)(address & 0xFFFF));
         }
 
         private void WriteMemory(int address, byte value)
         {
-            int addr = address & 0xFFFF;
-            _memory.WriteByte((ushort)addr, value);
-
-            if (addr == MemoryMap.PortLamps1 || addr == MemoryMap.PortLampsF9)
-            {
-                if (_ppi != null)
-                    _ppi.Lamps = value;
-            }
-            else if (addr == MemoryMap.PortControlWord)
-            {
-                if (_ppi != null)
-                    _ppi.ControlWord = value;
-            }
-            else if (addr == MemoryMap.PortAnalogMux)
-            {
-                if (_analog != null)
-                    _analog.SelectedMuxChannel = (byte)(value & 0x03);
-            }
-
-            if (addr >= MemoryMap.DisplayLatchStart && addr <= MemoryMap.DisplayLatchEnd)
-            {
-                if (_display != null)
-                    _display.WriteDigit(addr - MemoryMap.DisplayLatchStart, value);
-            }
+            _memory.WriteByte((ushort)(address & 0xFFFF), value);
         }
 
         private ushort ReadWord(int address)
@@ -633,23 +595,6 @@ namespace MikroLab.Core.Cpu
             int low = ReadMemory(address);
             int high = ReadMemory(address + 1);
             return (ushort)(low | (high << 8));
-        }
-
-        private byte ReadPort(byte port)
-        {
-            if (port == 0xFA)
-            {
-                if (_ppi != null)
-                    return _ppi.ReadTumblers();
-                return 0xFF;
-            }
-            if (port == 0xFE)
-            {
-                if (_analog != null)
-                    return _analog.ReadAdc();
-                return 0xFF;
-            }
-            return 0xFF;
         }
 
         private void PushWord(ushort value)

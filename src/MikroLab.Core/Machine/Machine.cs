@@ -9,6 +9,8 @@ namespace MikroLab.Core.Machine
     public sealed class Machine
     {
         public NibbleMemory Memory { get; }
+        public MappedMemory AddressSpace { get; }
+        public IoBus IoBus { get; }
         public ICpu Cpu { get; }
         public PpiState Ppi { get; }
         public DisplayState Display { get; }
@@ -31,31 +33,63 @@ namespace MikroLab.Core.Machine
             Diagnostics = diagnostics;
 
             Memory = new NibbleMemory();
+            AddressSpace = new MappedMemory(Memory);
             Ppi = new PpiState();
             Display = new DisplayState();
             Analog = new AnalogState();
+            IoBus = new IoBus();
+
+            // Legacy VNTU devices are registered in both address spaces. The
+            // CPUs only see the buses, never these concrete addresses.
+            var ppiDevice = new LegacyPpiDevice(Ppi, Memory);
+            IoBus.Register(ppiDevice, LegacyPpiDevice.PortLamps, LegacyPpiDevice.PortControl);
+            IoBus.Register(ppiDevice, LegacyPpiDevice.PortLampsAlias, LegacyPpiDevice.PortInput);
+            AddressSpace.Register(
+                ppiDevice,
+                LegacyPpiDevice.PortInput,
+                LegacyPpiDevice.PortInput,
+                MemoryAccess.Read);
+            AddressSpace.Register(
+                ppiDevice,
+                LegacyPpiDevice.PortLamps,
+                LegacyPpiDevice.PortControl,
+                MemoryAccess.Write);
+            AddressSpace.Register(
+                ppiDevice,
+                LegacyPpiDevice.PortLampsAlias,
+                LegacyPpiDevice.PortLampsAlias,
+                MemoryAccess.Write);
+
+            var analogDevice = new AnalogDevice(Analog, Memory);
+            IoBus.Register(analogDevice, AnalogDevice.PortMux, AnalogDevice.PortAdc);
+            AddressSpace.Register(
+                analogDevice,
+                AnalogDevice.PortAdc,
+                AnalogDevice.PortAdc,
+                MemoryAccess.Read);
+            AddressSpace.Register(
+                analogDevice,
+                AnalogDevice.PortMux,
+                AnalogDevice.PortMux,
+                MemoryAccess.Write);
+
+            var displayDevice = new DisplayMemoryDevice(
+                Display,
+                MemoryMap.DisplayLatchStart,
+                MemoryMap.DisplayLatchEnd);
+            AddressSpace.Register(
+                displayDevice,
+                MemoryMap.DisplayLatchStart,
+                MemoryMap.DisplayLatchEnd,
+                MemoryAccess.ReadWrite);
 
             if (profile == CpuProfile.Extended)
             {
-                Cpu = new ExtendedCpu(
-                    Memory,
-                    Ppi,
-                    Display,
-                    Analog,
-                    Sound,
-                    Clock,
-                    Diagnostics);
+                Cpu = new ExtendedCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
             }
             else
             {
-                Cpu = new LegacyCpu(
-                    Memory,
-                    Ppi,
-                    Display,
-                    Analog,
-                    Sound,
-                    Clock,
-                    Diagnostics);
+                Cpu = new LegacyCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
             }
         }
 

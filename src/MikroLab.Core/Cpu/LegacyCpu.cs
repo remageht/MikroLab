@@ -17,9 +17,7 @@ namespace MikroLab.Core.Cpu
         public const int REG_A = 7;
 
         private readonly IMemory _memory;
-        private readonly IPpiDevice _ppi;
-        private readonly IDisplaySink _display;
-        private readonly IAnalogSource _analog;
+        private readonly IIoBus _ioBus;
         private readonly ISound _sound;
         private readonly IClock _clock;
         private readonly IDiagnostics _diagnostics;
@@ -49,17 +47,13 @@ namespace MikroLab.Core.Cpu
 
         public LegacyCpu(
             IMemory memory,
-            IPpiDevice ppi = null,
-            IDisplaySink display = null,
-            IAnalogSource analog = null,
+            IIoBus ioBus,
             ISound sound = null,
             IClock clock = null,
             IDiagnostics diagnostics = null)
         {
             _memory = memory ?? throw new ArgumentNullException(nameof(memory));
-            _ppi = ppi;
-            _display = display;
-            _analog = analog;
+            _ioBus = ioBus ?? throw new ArgumentNullException(nameof(ioBus));
             _sound = sound;
             _clock = clock;
             _diagnostics = diagnostics;
@@ -161,46 +155,12 @@ namespace MikroLab.Core.Cpu
 
         public int GetMemory(int addr)
         {
-            int a = addr & 0xFFFF;
-            if (a == 0x00FA && _ppi != null)
-            {
-                byte w = _ppi.InputWord;
-                _ppi.InputWord = 0xFF;
-                return w;
-            }
-            if (a == 0x00FE && _analog != null)
-            {
-                return _analog.ReadAdc();
-            }
-            return _memory.ReadByte((ushort)a);
+            return _memory.ReadByte((ushort)(addr & 0xFFFF));
         }
 
         public void SetMemory(int addr, int val)
         {
-            int a = addr & 0xFFFF;
-            byte b = (byte)(val & 0xFF);
-            _memory.WriteByte((ushort)a, b);
-
-            // Port handling
-            if (a == MemoryMap.PortLamps1 || a == MemoryMap.PortLampsF9)
-            {
-                if (_ppi != null) _ppi.Lamps = b;
-            }
-            else if (a == MemoryMap.PortControlWord)
-            {
-                if (_ppi != null) _ppi.ControlWord = b;
-            }
-            else if (a == MemoryMap.PortAnalogMux)
-            {
-                if (_analog != null) _analog.SelectedMuxChannel = (byte)(b & 0x03);
-            }
-
-            // Display latch 83F8h..83FFh
-            if (a >= MemoryMap.DisplayLatchStart && a <= MemoryMap.DisplayLatchEnd)
-            {
-                int digitIndex = a - MemoryMap.DisplayLatchStart;
-                _display?.WriteDigit(digitIndex, b);
-            }
+            _memory.WriteByte((ushort)(addr & 0xFFFF), (byte)(val & 0xFF));
         }
 
         public bool CallFunc(int addr)
@@ -532,7 +492,7 @@ namespace MikroLab.Core.Cpu
             // OUT
             if (curCmd == 211) // 0xD3
             {
-                SetMemory(curOp1, GetRegister(REG_A));
+                _ioBus.WritePort(curOp1, (byte)GetRegister(REG_A));
                 State.PC += 2;
                 return true;
             }
@@ -540,12 +500,9 @@ namespace MikroLab.Core.Cpu
             // IN
             if (curCmd == 0xDB)
             {
-                if (curOp1 == 0xFA) // tumblers
+                if (_ioBus.IsMapped(curOp1))
                 {
-                    if (_ppi != null)
-                        SetRegister(REG_A, _ppi.ReadTumblers());
-                    else
-                        SetRegister(REG_A, 1);
+                    SetRegister(REG_A, _ioBus.ReadPort(curOp1));
                 }
                 State.PC += 2;
                 return true;

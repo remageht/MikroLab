@@ -27,13 +27,5 @@ namespace MikroLab.Core.Memory
         public const int MonitorSeggg = 0x0100;
         public const int MonitorSound = 0x0300;
         public const int MonitorDelay = 0x0400;
-
-        // Ports mapped to memory addresses in legacy
-        public const int PortInputWord = 0x00FA; // aWord
-        public const int PortLamps1 = 0x0001;    // OUT 01h
-        public const int PortLampsF9 = 0x00F9;   // OUT F9h
-        public const int PortControlWord = 0x0002; // OUT 02h
-        public const int PortAnalogMux = 0x00FD; // OUT FDh
-        public const int PortAdc = 0x00FE;       // IN FEh
     }
 }
