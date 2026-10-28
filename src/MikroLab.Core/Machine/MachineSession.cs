@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Devices;
+using MikroLab.Core.Memory;
 
 namespace MikroLab.Core.Machine
 {
@@ -19,13 +21,26 @@ namespace MikroLab.Core.Machine
         private readonly Machine _machine;
         private readonly object _lock = new object();
         private readonly HashSet<ushort> _breakpoints = new HashSet<ushort>();
+        private readonly HashSet<MemoryWatchpoint> _watchpoints = new HashSet<MemoryWatchpoint>();
+        private readonly HashSet<ushort> _readWatchpoints = new HashSet<ushort>();
+        private readonly HashSet<ushort> _writeWatchpoints = new HashSet<ushort>();
+        private readonly ExecutionLog _executionLog = new ExecutionLog();
+        private readonly StepHistory _stepHistory = new StepHistory();
         private Thread _runThread;
         private volatile bool _isRunning;
         private volatile bool _shouldStop;
         private volatile bool _isDisposed;
+        private volatile bool _logExecution = true;
         private volatile MachineSnapshot _lastSnapshot;
         private int _skipBreakpointOnce = -1;
         private int _breakpointAddress = -1;
+        private int _runToAddress = -1;
+        private int _stopAddress = -1;
+        private int _watchpointAddress = -1;
+        private int _watchpointAccess;
+        private int _pauseReason;
+        private volatile int _pendingWatchpointAddress = -1;
+        private volatile int _pendingWatchpointAccess;
         private int _targetInstructionsPerSecond;
 
         public Machine Machine => _machine;
@@ -36,6 +51,21 @@ namespace MikroLab.Core.Machine
         /// thread and never blocks, even while the machine is executing.
         /// </summary>
         public MachineSnapshot LastSnapshot => _lastSnapshot;
+
+        /// <summary>Bounded instruction log shared by the UI and exporters.</summary>
+        public ExecutionLog ExecutionLog => _executionLog;
+
+        /// <summary>Snapshots taken before single-steps, newest last.</summary>
+        public StepHistory StepHistory => _stepHistory;
+
+        public bool CanStepBack => _stepHistory.CanStepBack;
+
+        /// <summary>When true, every executed instruction is appended to the log.</summary>
+        public bool LogExecution
+        {
+            get => _logExecution;
+            set => _logExecution = value;
+        }
 
         /// <summary>True when execution stopped because a breakpoint was reached.</summary>
         public bool IsPausedAtBreakpoint => _breakpointAddress >= 0;
@@ -49,6 +79,38 @@ namespace MikroLab.Core.Machine
                 return value >= 0 ? (ushort)value : (ushort?)null;
             }
         }
+
+        public bool IsPausedAtWatchpoint => _watchpointAddress >= 0;
+
+        public ushort? WatchpointAddress
+        {
+            get
+            {
+                int value = _watchpointAddress;
+                return value >= 0 ? (ushort)value : (ushort?)null;
+            }
+        }
+
+        public MemoryAccess? WatchpointAccess
+        {
+            get
+            {
+                int address = _watchpointAddress;
+                return address >= 0 ? (MemoryAccess)_watchpointAccess : (MemoryAccess?)null;
+            }
+        }
+
+        /// <summary>Address associated with the stop reason (breakpoint, watch or run-to).</summary>
+        public ushort? StopAddress
+        {
+            get
+            {
+                int value = _stopAddress;
+                return value >= 0 ? (ushort)value : (ushort?)null;
+            }
+        }
+
+        public PauseReason PauseReason => (PauseReason)_pauseReason;
 
         public event Action<MachineSnapshot> SnapshotUpdated;
         public event Action<string> ExecutionError;
@@ -84,6 +146,8 @@ namespace MikroLab.Core.Machine
             {
                 _machine.Diagnostics = new SessionDiagnostics(this);
             }
+
+            _machine.AddressSpace.MemoryAccessed += OnMemoryAccessed;
         }
 
         private class SessionDiagnostics : IDiagnostics
@@ -99,10 +163,71 @@ namespace MikroLab.Core.Machine
         public void Run()
         {
             ThrowIfDisposed();
+            StartRun(clearRunTo: true);
+        }
 
+        /// <summary>
+        /// Runs until the CPU reaches <paramref name="address"/> (before
+        /// executing the instruction there) or another stop condition fires.
+        /// </summary>
+        public void RunTo(ushort address)
+        {
+            ThrowIfDisposed();
+
+            if (_isRunning)
+            {
+                Pause();
+            }
+
+            bool stopImmediately;
+            bool halted;
+            lock (_lock)
+            {
+                _runToAddress = address;
+                _pauseReason = (int)PauseReason.None;
+                _breakpointAddress = -1;
+                _watchpointAddress = -1;
+                _stopAddress = -1;
+                _pendingWatchpointAddress = -1;
+                _stepHistory.Clear();
+
+                halted = _machine.State == RunState.Halted;
+                stopImmediately = !halted && _machine.Cpu.State.PC == address;
+
+                if (halted)
+                {
+                    _runToAddress = -1;
+                    _pauseReason = (int)PauseReason.Halted;
+                }
+                else if (stopImmediately)
+                {
+                    _runToAddress = -1;
+                    _machine.State = RunState.Paused;
+                    _pauseReason = (int)PauseReason.RunToAddress;
+                    _stopAddress = address;
+                }
+            }
+
+            if (halted || stopImmediately)
+            {
+                PublishSnapshot();
+                return;
+            }
+
+            StartRun(clearRunTo: false);
+        }
+
+        private void StartRun(bool clearRunTo)
+        {
             lock (_lock)
             {
                 if (_isRunning) return;
+
+                if (clearRunTo)
+                {
+                    _runToAddress = -1;
+                    _pauseReason = (int)PauseReason.None;
+                }
 
                 // Resume from a breakpoint at the current PC: execute the
                 // instruction under PC once instead of stopping on the same
@@ -110,9 +235,13 @@ namespace MikroLab.Core.Machine
                 int currentPc = _machine.Cpu.State.PC;
                 _skipBreakpointOnce = _breakpointAddress == currentPc ? currentPc : -1;
                 _breakpointAddress = -1;
+                _watchpointAddress = -1;
+                _stopAddress = -1;
+                _pendingWatchpointAddress = -1;
                 _machine.State = RunState.Running;
                 _isRunning = true;
                 _shouldStop = false;
+                _stepHistory.Clear();
 
                 ClearClockStop();
 
@@ -163,6 +292,8 @@ namespace MikroLab.Core.Machine
                 {
                     _machine.State = RunState.Paused;
                     _breakpointAddress = -1;
+                    _runToAddress = -1;
+                    _pauseReason = (int)PauseReason.Manual;
                 }
                 _isRunning = false;
             }
@@ -182,11 +313,76 @@ namespace MikroLab.Core.Machine
             {
                 _breakpointAddress = -1;
                 _skipBreakpointOnce = -1;
+                _runToAddress = -1;
+                _watchpointAddress = -1;
+                _stopAddress = -1;
+                _pendingWatchpointAddress = -1;
+
+                ushort pc = _machine.Cpu.State.PC;
+                ulong cyclesBefore = _machine.Cpu.State.Cycles;
+                bool log = _logExecution;
+                DisassembledInstruction instruction = log
+                    ? I8080Disassembler.Decode(_machine.Memory, pc)
+                    : default;
+
+                _stepHistory.Push(_machine.Capture());
                 _machine.State = RunState.Running;
                 bool ok = _machine.Step();
-                _machine.State = ok ? RunState.Paused : RunState.Halted;
+                if (log)
+                {
+                    AppendLog(pc, instruction, cyclesBefore);
+                }
+
+                bool watchpoint = TakePendingWatchpoint();
+                if (!ok)
+                {
+                    _machine.State = RunState.Halted;
+                    if (!watchpoint) _pauseReason = (int)PauseReason.Halted;
+                }
+                else
+                {
+                    _machine.State = RunState.Paused;
+                }
+
+                if (!watchpoint)
+                {
+                    _pauseReason = ok ? (int)PauseReason.None : (int)PauseReason.Halted;
+                }
             }
             PublishSnapshot();
+        }
+
+        /// <summary>
+        /// Restores the machine state captured before the most recent single
+        /// step. Returns false when the history is empty.
+        /// </summary>
+        public bool StepBack()
+        {
+            ThrowIfDisposed();
+
+            if (_isRunning)
+            {
+                Pause();
+            }
+
+            MachineSnapshot snapshot;
+            lock (_lock)
+            {
+                if (!_stepHistory.TryPop(out snapshot)) return false;
+
+                _breakpointAddress = -1;
+                _skipBreakpointOnce = -1;
+                _runToAddress = -1;
+                _watchpointAddress = -1;
+                _stopAddress = -1;
+                _pendingWatchpointAddress = -1;
+
+                _machine.Restore(snapshot);
+                _machine.State = snapshot.Halted ? RunState.Halted : RunState.Paused;
+                _pauseReason = (int)(snapshot.Halted ? PauseReason.Halted : PauseReason.Manual);
+            }
+            PublishSnapshot();
+            return true;
         }
 
         public void Reset(ResetKind kind = ResetKind.Soft)
@@ -227,9 +423,22 @@ namespace MikroLab.Core.Machine
                 _isRunning = false;
                 _breakpointAddress = -1;
                 _skipBreakpointOnce = -1;
+                _runToAddress = -1;
+                _watchpointAddress = -1;
+                _stopAddress = -1;
+                _pauseReason = (int)PauseReason.None;
+                _pendingWatchpointAddress = -1;
+                _stepHistory.Clear();
+                _executionLog.Clear();
                 _machine.Reset(kind);
             }
             PublishSnapshot();
+        }
+
+        public void ClearExecutionLog()
+        {
+            ThrowIfDisposed();
+            _executionLog.Clear();
         }
 
         // ---------------------------------------------------------------- breakpoints
@@ -271,6 +480,62 @@ namespace MikroLab.Core.Machine
             }
         }
 
+        // ---------------------------------------------------------------- watchpoints
+
+        /// <summary>Replaces the read/write watchpoint set. Thread-safe.</summary>
+        public void SetWatchpoints(IEnumerable<MemoryWatchpoint> watchpoints)
+        {
+            ThrowIfDisposed();
+
+            lock (_lock)
+            {
+                _watchpoints.Clear();
+                _readWatchpoints.Clear();
+                _writeWatchpoints.Clear();
+
+                if (watchpoints != null)
+                {
+                    foreach (MemoryWatchpoint watchpoint in watchpoints)
+                    {
+                        if (!_watchpoints.Add(watchpoint)) continue;
+                        if (watchpoint.WatchesRead) _readWatchpoints.Add(watchpoint.Address);
+                        if (watchpoint.WatchesWrite) _writeWatchpoints.Add(watchpoint.Address);
+                    }
+                }
+
+                _pendingWatchpointAddress = -1;
+            }
+        }
+
+        public MemoryWatchpoint[] GetWatchpoints()
+        {
+            lock (_lock)
+            {
+                var result = new MemoryWatchpoint[_watchpoints.Count];
+                _watchpoints.CopyTo(result);
+                Array.Sort(result, (left, right) =>
+                {
+                    int address = left.Address.CompareTo(right.Address);
+                    return address != 0 ? address : left.Access.CompareTo(right.Access);
+                });
+                return result;
+            }
+        }
+
+        public bool HasWatchpoint(ushort address, MemoryAccess access)
+        {
+            lock (_lock)
+            {
+                if ((access & MemoryAccess.Read) != 0 && _readWatchpoints.Contains(address)) return true;
+                return (access & MemoryAccess.Write) != 0 && _writeWatchpoints.Contains(address);
+            }
+        }
+
+        public void ClearWatchpoints()
+        {
+            SetWatchpoints(null);
+        }
+
         /// <summary>Debug-only call stack (return addresses, top first).</summary>
         public ushort[] GetCallStack()
         {
@@ -290,7 +555,9 @@ namespace MikroLab.Core.Machine
 
         /// <summary>
         /// Runs a mutation (memory edit, tumbler change, register poke) under
-        /// the machine lock and publishes a fresh snapshot afterwards.
+        /// the machine lock and publishes a fresh snapshot afterwards. The
+        /// single-step history is invalidated because arbitrary edits are not
+        /// represented in the snapshot ring.
         /// </summary>
         public void WithMachine(Action<Machine> action)
         {
@@ -299,6 +566,8 @@ namespace MikroLab.Core.Machine
 
             lock (_lock)
             {
+                _stepHistory.Clear();
+                _pendingWatchpointAddress = -1;
                 action(_machine);
             }
             PublishSnapshot();
@@ -325,6 +594,44 @@ namespace MikroLab.Core.Machine
 
         // ---------------------------------------------------------------- worker
 
+        private void OnMemoryAccessed(ushort address, byte value, MemoryAccess access)
+        {
+            if (_pendingWatchpointAddress >= 0) return;
+
+            if ((access & MemoryAccess.Read) != 0 && _readWatchpoints.Contains(address))
+            {
+                _pendingWatchpointAddress = address;
+                _pendingWatchpointAccess = (int)MemoryAccess.Read;
+                return;
+            }
+
+            if ((access & MemoryAccess.Write) != 0 && _writeWatchpoints.Contains(address))
+            {
+                _pendingWatchpointAddress = address;
+                _pendingWatchpointAccess = (int)MemoryAccess.Write;
+            }
+        }
+
+        private bool TakePendingWatchpoint()
+        {
+            int address = _pendingWatchpointAddress;
+            if (address < 0) return false;
+
+            _watchpointAddress = address;
+            _watchpointAccess = _pendingWatchpointAccess;
+            _stopAddress = address;
+            _pauseReason = (int)PauseReason.Watchpoint;
+            _pendingWatchpointAddress = -1;
+            return true;
+        }
+
+        private void AppendLog(ushort pc, DisassembledInstruction instruction, ulong cyclesBefore)
+        {
+            ulong cyclesAfter = _machine.Cpu.State.Cycles;
+            ulong cycles = cyclesAfter >= cyclesBefore ? cyclesAfter - cyclesBefore : 0;
+            _executionLog.Append(pc, instruction, _machine.Cpu.State, cycles);
+        }
+
         private void RunWorker()
         {
             var stopwatch = Stopwatch.StartNew();
@@ -339,6 +646,8 @@ namespace MikroLab.Core.Machine
                 {
                     bool canContinue = true;
                     bool breakpointHit = false;
+                    bool watchpointHit = false;
+                    bool runToHit = false;
                     int executed = 0;
                     int target = TargetInstructionsPerSecond;
                     int slice = Math.Max(1, InstructionsPerSlice);
@@ -356,34 +665,71 @@ namespace MikroLab.Core.Machine
                             if (_shouldStop) break;
 
                             ushort pc = _machine.Cpu.State.PC;
+
+                            if (_runToAddress >= 0 && pc == _runToAddress)
+                            {
+                                _machine.State = RunState.Paused;
+                                _runToAddress = -1;
+                                _pauseReason = (int)PauseReason.RunToAddress;
+                                _stopAddress = pc;
+                                _shouldStop = true;
+                                runToHit = true;
+                                break;
+                            }
+
                             if (_breakpoints.Contains(pc) && pc != _skipBreakpointOnce)
                             {
                                 _machine.State = RunState.Paused;
                                 _breakpointAddress = pc;
+                                _stopAddress = pc;
+                                _pauseReason = (int)PauseReason.Breakpoint;
                                 _shouldStop = true;
                                 breakpointHit = true;
                                 break;
                             }
 
                             _skipBreakpointOnce = -1;
+                            _pendingWatchpointAddress = -1;
+
+                            ulong cyclesBefore = _machine.Cpu.State.Cycles;
+                            bool log = _logExecution;
+                            DisassembledInstruction instruction = log
+                                ? I8080Disassembler.Decode(_machine.Memory, pc)
+                                : default;
+
                             canContinue = _machine.Step();
                             executed++;
+                            if (log)
+                            {
+                                AppendLog(pc, instruction, cyclesBefore);
+                            }
+
+                            if (TakePendingWatchpoint())
+                            {
+                                watchpointHit = true;
+                                _shouldStop = true;
+                            }
+
                             if (!canContinue)
                             {
                                 _machine.State = RunState.Halted;
+                                if (_pauseReason == (int)PauseReason.None)
+                                    _pauseReason = (int)PauseReason.Halted;
                                 break;
                             }
+
+                            if (watchpointHit) break;
                         }
                     }
 
                     long now = stopwatch.ElapsedMilliseconds;
-                    if (breakpointHit || now - lastSnapshotTime >= 33) // ~30 Hz
+                    if (breakpointHit || watchpointHit || runToHit || now - lastSnapshotTime >= 33) // ~30 Hz
                     {
                         PublishSnapshot();
                         lastSnapshotTime = now;
                     }
 
-                    if (breakpointHit || !canContinue)
+                    if (breakpointHit || watchpointHit || runToHit || !canContinue)
                         break;
 
                     if (target > 0)
@@ -425,8 +771,19 @@ namespace MikroLab.Core.Machine
                 lock (_lock)
                 {
                     _isRunning = false;
+                    _runToAddress = -1;
+                    _pendingWatchpointAddress = -1;
                     if (_machine.State == RunState.Running)
                         _machine.State = RunState.Paused;
+                    if (_machine.State == RunState.Halted)
+                    {
+                        if (_pauseReason == (int)PauseReason.None)
+                            _pauseReason = (int)PauseReason.Halted;
+                    }
+                    else if (_pauseReason == (int)PauseReason.None)
+                    {
+                        _pauseReason = (int)PauseReason.Manual;
+                    }
                     if (ReferenceEquals(_runThread, Thread.CurrentThread))
                         _runThread = null;
                 }
@@ -466,6 +823,7 @@ namespace MikroLab.Core.Machine
             _isDisposed = true;
             _shouldStop = true;
             RequestClockStop();
+            _machine.AddressSpace.MemoryAccessed -= OnMemoryAccessed;
 
             Thread worker = _runThread;
             if (worker != null && worker != Thread.CurrentThread)

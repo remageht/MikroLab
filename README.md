@@ -76,7 +76,7 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 
 ## Релизы
 
-Текущая версия — **0.4.0**. Теги и готовые сборки публикуются на странице
+Текущая версия — **1.0.0**. Теги и готовые сборки публикуются на странице
 [GitHub Releases](https://github.com/remageht/MikroLab/releases), история
 изменений — в [CHANGELOG.md](CHANGELOG.md).
 

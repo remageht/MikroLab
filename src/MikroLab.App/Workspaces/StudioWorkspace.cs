@@ -6,6 +6,7 @@ using System.Text;
 using System.Windows.Forms;
 using MikroLab.App.Controls;
 using MikroLab.Core.Assembler;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Machine;
 
 namespace MikroLab.App.Workspaces
@@ -19,6 +20,7 @@ namespace MikroLab.App.Workspaces
         private readonly MemoryPanel _memory;
         private readonly DevicesPanel _devices;
         private readonly StackPanel _stack;
+        private readonly ExecutionLogPanel _logPanel;
         private readonly Panel _inspectorContent;
         private readonly UiButton[] _inspectorTabs;
         private readonly Label _fileLabel;
@@ -31,6 +33,7 @@ namespace MikroLab.App.Workspaces
         private readonly UiButton _btnStep;
         private readonly UiButton _btnReset;
         private readonly UiButton _btnAssemble;
+        private readonly UiButton _btnStepBack;
 
         private string _filePath;
         private bool _dirty;
@@ -69,7 +72,7 @@ namespace MikroLab.App.Workspaces
                 Margin = new Padding(0, 0, 14, 0),
                 Padding = new Padding(0)
             };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
@@ -79,19 +82,21 @@ namespace MikroLab.App.Workspaces
             _btnStep = MakeAction("Шаг", UiButtonKind.Secondary, 72, () => StepProgram());
             _btnReset = MakeAction("Сброс", UiButtonKind.Secondary, 86, () => ResetProgram());
             _btnAssemble = MakeAction("Собрать", UiButtonKind.Secondary, 84, () => AssembleProgram());
+            _btnStepBack = MakeAction("Шаг назад", UiButtonKind.Secondary, 96, () => StepBackProgram());
 
             var actionBar = new CardPanel { Dock = DockStyle.Fill, Padding = new Padding(8, 8, 8, 8) };
             var actionLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 1,
+                RowCount = 2,
                 BackColor = AppTheme.Surface,
                 Margin = new Padding(0)
             };
             actionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             actionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            actionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
 
             var leftFlow = new FlowLayoutPanel
             {
@@ -107,6 +112,7 @@ namespace MikroLab.App.Workspaces
             leftFlow.Controls.Add(_btnRun);
             leftFlow.Controls.Add(_btnPause);
             leftFlow.Controls.Add(_btnStep);
+            leftFlow.Controls.Add(_btnStepBack);
             leftFlow.Controls.Add(_btnReset);
             leftFlow.Controls.Add(MakeSeparator());
             Label sampleLabel = AppTheme.Label("Пример", AppTheme.TextDim, AppTheme.SmallFont);
@@ -142,8 +148,25 @@ namespace MikroLab.App.Workspaces
             rightFlow.Controls.Add(MakeSmallButton("Открыть", () => OpenDocument()));
             rightFlow.Controls.Add(MakeSmallButton("Сохранить", () => SaveDocument()));
 
+            var debugFlow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoScroll = false,
+                BackColor = AppTheme.Surface,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            debugFlow.Controls.Add(MakeSmallButton("В точку…", () => RunToAddress()));
+            debugFlow.Controls.Add(MakeSmallButton("Точки…", () => ShowDebugPoints()));
+            debugFlow.Controls.Add(MakeSmallButton("Журнал", () => SelectInspector(4)));
+            debugFlow.Controls.Add(MakeSmallButton("Очистить", () => { _host.ClearExecutionLog(); if (_logPanel != null) _logPanel.RefreshLog(_host.ExecutionLog, true); }));
+
             actionLayout.Controls.Add(leftFlow, 0, 0);
             actionLayout.Controls.Add(rightFlow, 1, 0);
+            actionLayout.Controls.Add(debugFlow, 0, 1);
+            actionLayout.SetColumnSpan(debugFlow, 2);
             actionBar.Controls.Add(actionLayout);
 
             var editorHeader = new CardPanel { Dock = DockStyle.Fill, Padding = new Padding(12, 0, 12, 0) };
@@ -227,17 +250,17 @@ namespace MikroLab.App.Workspaces
             var tabBar = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 4,
+                ColumnCount = 5,
                 RowCount = 1,
                 BackColor = AppTheme.SurfaceRaised,
                 Margin = new Padding(0),
                 Padding = new Padding(3)
             };
-            for (int i = 0; i < 4; i++) tabBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            for (int i = 0; i < 5; i++) tabBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
             tabBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            _inspectorTabs = new UiButton[4];
-            string[] labels = { "Регистры", "Память", "Устройства", "Стек" };
+            _inspectorTabs = new UiButton[5];
+            string[] labels = { "Регистры", "Память", "Устройства", "Стек", "Журнал" };
             for (int i = 0; i < labels.Length; i++)
             {
                 int index = i;
@@ -275,17 +298,41 @@ namespace MikroLab.App.Workspaces
             _inspectorContent = new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.Surface };
             _registers = new RegisterPanel { Dock = DockStyle.Fill };
             _registers.RegisterEdited += OnRegisterEdited;
+            _registers.FlagToggled += OnFlagToggled;
             _memory = new MemoryPanel { Dock = DockStyle.Fill };
             _memory.ByteWriteRequested += OnMemoryWrite;
             _devices = new DevicesPanel { Dock = DockStyle.Fill };
             _devices.TumblerChanged += OnTumblerChanged;
             _devices.AnalogChanged += OnAnalogChanged;
             _stack = new StackPanel { Dock = DockStyle.Fill };
+            _logPanel = new ExecutionLogPanel { Dock = DockStyle.Fill };
+            _logPanel.ClearRequested += () => { _host.ClearExecutionLog(); _logPanel.RefreshLog(_host.ExecutionLog, true); };
+            _logPanel.ExportRequested += format =>
+            {
+                using (var dialog = new SaveFileDialog())
+                {
+                    dialog.Title = "Экспорт журнала";
+                    dialog.Filter = format == ExecutionLogFormat.Csv
+                        ? "CSV (*.csv)|*.csv|Все файлы (*.*)|*.*"
+                        : "Markdown (*.md)|*.md|Все файлы (*.*)|*.*";
+                    dialog.FileName = format == ExecutionLogFormat.Csv ? "execution-log.csv" : "execution-log.md";
+                    if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                    try
+                    {
+                        _host.ExportExecutionLog(dialog.FileName, format);
+                    }
+                    catch (Exception ex)
+                    {
+                        _output.Log("Не удалось экспортировать журнал: " + ex.Message, LogLevel.Error);
+                    }
+                }
+            };
 
             _inspectorContent.Controls.Add(_registers);
             _inspectorContent.Controls.Add(_memory);
             _inspectorContent.Controls.Add(_devices);
             _inspectorContent.Controls.Add(_stack);
+            _inspectorContent.Controls.Add(_logPanel);
 
             inspectorLayout.Controls.Add(tabBar, 0, 0);
             inspectorLayout.Controls.Add(inspectorHeader, 0, 1);
@@ -409,6 +456,33 @@ namespace MikroLab.App.Workspaces
             UpdateButtons();
         }
 
+        private void StepBackProgram()
+        {
+            _host.StepBack();
+            UpdateExecutionLine(_host.CurrentPc());
+            _logPanel.RefreshLog(_host.ExecutionLog, true);
+            UpdateButtons();
+        }
+
+        private void RunToAddress()
+        {
+            using (var dialog = new AddressDialog("Выполнить до адреса", "Адрес останова (hex):", _host.CurrentPc()))
+            {
+                if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                _host.RunTo(dialog.Value);
+            }
+        }
+
+        private void ShowDebugPoints()
+        {
+            using (var dialog = new DebugPointsDialog(_host))
+            {
+                dialog.ShowDialog(FindForm());
+                _logPanel.RefreshLog(_host.ExecutionLog, true);
+                UpdateButtons();
+            }
+        }
+
         private void ResetProgram()
         {
             _host.Reset();
@@ -449,6 +523,13 @@ namespace MikroLab.App.Workspaces
             if (!_host.SetRegister(name, value)) return;
 
             UpdateExecutionLine(_host.CurrentPc());
+            _registers.UpdateSnapshot(_host.Snapshot());
+            UpdateButtons();
+        }
+
+        private void OnFlagToggled(string name)
+        {
+            _host.ToggleFlag(name);
             _registers.UpdateSnapshot(_host.Snapshot());
             UpdateButtons();
         }
@@ -649,10 +730,12 @@ namespace MikroLab.App.Workspaces
             _memory.Visible = index == 1;
             _devices.Visible = index == 2;
             _stack.Visible = index == 3;
+            _logPanel.Visible = index == 4;
             if (index == 0) _registers.BringToFront();
             else if (index == 1) _memory.BringToFront();
             else if (index == 2) _devices.BringToFront();
-            else _stack.BringToFront();
+            else if (index == 3) _stack.BringToFront();
+            else _logPanel.BringToFront();
         }
 
         // ------------------------------------------------------------------ update loop
@@ -669,6 +752,9 @@ namespace MikroLab.App.Workspaces
             {
                 _stack.UpdateStack(snapshot, _host.CallStack());
             }
+
+            _logPanel.RefreshLog(_host.ExecutionLog);
+            _btnStepBack.Enabled = _host.CanStepBack && _host.State != RunState.Running;
 
             UpdateExecutionLine(snapshot.PC);
             UpdateButtons();
@@ -690,6 +776,7 @@ namespace MikroLab.App.Workspaces
             _btnRun.Enabled = !running && !halted;
             _btnPause.Enabled = running;
             _btnStep.Enabled = !halted;
+            _btnStepBack.Enabled = _host.CanStepBack && !running;
             _btnReset.Enabled = true;
             _btnAssemble.Enabled = !running;
         }
@@ -727,6 +814,9 @@ namespace MikroLab.App.Workspaces
         public void HostStep() => StepProgram();
         public void HostReset() => ResetProgram();
         public void HostToggleBreakpoint(int line) => ToggleBreakpoint(line);
+        public void HostStepBack() => StepBackProgram();
+        public void HostRunTo(ushort address) => RunToAddress();
+        public void HostShowDebugPoints() => ShowDebugPoints();
         public void HostSelectInspector(int index) => SelectInspector(index);
         public void HostNew() => NewDocument();
         public void HostOpen() => OpenDocument();

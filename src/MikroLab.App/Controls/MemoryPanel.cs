@@ -397,6 +397,8 @@ namespace MikroLab.App.Controls
 
         public event Action<ushort, byte> ByteWriteRequested;
 
+        private MachineSnapshot _snapshot;
+
         public MemoryPanel()
         {
             BackColor = AppTheme.Surface;
@@ -404,7 +406,7 @@ namespace MikroLab.App.Controls
             var topBar = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 42,
+                Height = 78,
                 BackColor = AppTheme.Surface,
                 Padding = new Padding(12, 8, 12, 6)
             };
@@ -458,6 +460,36 @@ namespace MikroLab.App.Controls
             topBar.Controls.Add(go);
             topBar.Controls.Add(_followPc);
 
+            var jumpBar = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                BackColor = AppTheme.Surface,
+                Padding = new Padding(12, 2, 12, 4)
+            };
+
+            Label jumpLabel = AppTheme.Label("Перейти к", AppTheme.TextMuted, AppTheme.SmallFont);
+            jumpLabel.Location = new Point(12, 8);
+            jumpBar.Controls.Add(jumpLabel);
+
+            int jumpX = 92;
+            foreach (var pair in new[] { "PC", "HL", "DE", "BC", "SP" })
+            {
+                string target = pair;
+                var button = new UiButton
+                {
+                    Text = target,
+                    Kind = UiButtonKind.Ghost,
+                    Width = 46,
+                    Height = 24,
+                    Font = AppTheme.SmallFont,
+                    Location = new Point(jumpX, 4)
+                };
+                button.Click += (sender, args) => JumpToRegister(target);
+                jumpBar.Controls.Add(button);
+                jumpX += 50;
+            }
+
             _hex = new HexViewer { Dock = DockStyle.Fill };
             _hex.ByteEditRequested += (address, value) =>
             {
@@ -468,12 +500,29 @@ namespace MikroLab.App.Controls
             };
 
             Controls.Add(_hex);
+            Controls.Add(jumpBar);
             Controls.Add(topBar);
         }
 
         public void UpdateSnapshot(MachineSnapshot snapshot)
         {
+            _snapshot = snapshot;
             _hex.UpdateSnapshot(snapshot);
+        }
+
+        private void JumpToRegister(string name)
+        {
+            if (_snapshot == null) return;
+            ushort address = 0;
+            switch (name)
+            {
+                case "PC": address = _snapshot.PC; break;
+                case "HL": address = (ushort)((_snapshot.H << 8) | _snapshot.L); break;
+                case "DE": address = (ushort)((_snapshot.D << 8) | _snapshot.E); break;
+                case "BC": address = (ushort)((_snapshot.B << 8) | _snapshot.C); break;
+                case "SP": address = _snapshot.SP; break;
+            }
+            SetAddress(address);
         }
 
         public void SetAddress(ushort address)

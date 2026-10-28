@@ -11,9 +11,11 @@ namespace MikroLab.App.Controls
     internal sealed class RegisterPanel : Control
     {
         private readonly List<RegisterHit> _hits = new List<RegisterHit>();
+        private readonly List<FlagHit> _flagHits = new List<FlagHit>();
         private MachineSnapshot _snapshot;
 
         public event Action<string, ushort> RegisterEdited;
+        public event Action<string> FlagToggled;
 
         public RegisterPanel()
         {
@@ -43,6 +45,7 @@ namespace MikroLab.App.Controls
             Graphics g = e.Graphics;
             g.Clear(AppTheme.Surface);
             _hits.Clear();
+            _flagHits.Clear();
 
             if (_snapshot == null)
             {
@@ -120,11 +123,11 @@ namespace MikroLab.App.Controls
             TextRenderer.DrawText(g, "ФЛАГИ", AppTheme.SmallBoldFont, new Point(left, top), AppTheme.TextDim);
             top += 24;
 
-            DrawFlag(g, left, top, "C", _snapshot.Flags.C);
-            DrawFlag(g, left + 52, top, "Z", _snapshot.Flags.Z);
-            DrawFlag(g, left + 104, top, "S", _snapshot.Flags.S);
-            DrawFlag(g, left + 156, top, "P", _snapshot.Flags.P);
-            DrawFlag(g, left + 208, top, "AC", _snapshot.Flags.AC);
+            DrawFlag(g, _flagHits, left, top, "C", _snapshot.Flags.C);
+            DrawFlag(g, _flagHits, left + 52, top, "Z", _snapshot.Flags.Z);
+            DrawFlag(g, _flagHits, left + 104, top, "S", _snapshot.Flags.S);
+            DrawFlag(g, _flagHits, left + 156, top, "P", _snapshot.Flags.P);
+            DrawFlag(g, _flagHits, left + 208, top, "AC", _snapshot.Flags.AC);
 
             top += 40;
             TextRenderer.DrawText(g, "ТАКТЫ", AppTheme.SmallBoldFont, new Point(left, top), AppTheme.TextDim);
@@ -135,7 +138,20 @@ namespace MikroLab.App.Controls
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (e.Button != MouseButtons.Left || e.Clicks < 2) return;
+            if (e.Button != MouseButtons.Left) return;
+
+            if (e.Clicks < 2)
+            {
+                foreach (FlagHit hit in _flagHits)
+                {
+                    if (hit.Bounds.Contains(e.Location))
+                    {
+                        FlagToggled?.Invoke(hit.Name);
+                        return;
+                    }
+                }
+                return;
+            }
 
             foreach (RegisterHit hit in _hits)
             {
@@ -149,6 +165,17 @@ namespace MikroLab.App.Controls
                     }
                 }
                 return;
+            }
+        }
+
+        private readonly struct FlagHit
+        {
+            public string Name { get; }
+            public Rectangle Bounds { get; }
+            public FlagHit(string name, Rectangle bounds)
+            {
+                Name = name;
+                Bounds = bounds;
             }
         }
 
@@ -168,13 +195,14 @@ namespace MikroLab.App.Controls
             }
         }
 
-        private static void DrawFlag(Graphics g, int x, int y, string name, bool on)
+        private static void DrawFlag(Graphics g, List<FlagHit> hits, int x, int y, string name, bool on)
         {
             Rectangle bounds = new Rectangle(x, y, 38, 26);
             AppTheme.FillRounded(g, bounds, 6, on ? AppTheme.AccentSoft : AppTheme.SurfaceRaised);
             AppTheme.DrawRoundedBorder(g, bounds, 6, on ? AppTheme.Accent : AppTheme.BorderSoft);
             TextRenderer.DrawText(g, name, AppTheme.SmallBoldFont, bounds, on ? AppTheme.Text : AppTheme.TextDim,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            hits.Add(new FlagHit(name, bounds));
         }
     }
 

@@ -454,6 +454,38 @@ namespace MikroLab.App
             Text = "MikroLab — " + name;
         }
 
+        private void RunToAddress()
+        {
+            using (var dialog = new AddressDialog("Выполнить до адреса", "Адрес останова (hex):", _host.CurrentPc()))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+                if (_workspace == Workspace.Studio)
+                {
+                    _studio.HostRunTo(dialog.Value);
+                }
+                else
+                {
+                    _host.RunTo(dialog.Value);
+                }
+                PumpUi();
+            }
+        }
+
+        private void ShowDebugPoints()
+        {
+            if (_workspace != Workspace.Studio) SwitchTo(Workspace.Studio);
+            _studio.HostShowDebugPoints();
+            PumpUi();
+        }
+
+        private void StepBack()
+        {
+            if (_workspace == Workspace.Studio) _studio.HostStepBack();
+            else _host.StepBack();
+            PumpUi();
+        }
+
         private void ShowHelp()
         {
             using (var dialog = new HelpDialog())
@@ -533,6 +565,15 @@ namespace MikroLab.App
                     return true;
                 case Keys.Control | Keys.Shift | Keys.P:
                     EditProfile();
+                    return true;
+                case Keys.Control | Keys.F5:
+                    RunToAddress();
+                    return true;
+                case Keys.Control | Keys.B:
+                    ShowDebugPoints();
+                    return true;
+                case Keys.Control | Keys.F10:
+                    StepBack();
                     return true;
                 case Keys.Control | Keys.Shift | Keys.S:
                     SaveState();

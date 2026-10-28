@@ -32,6 +32,9 @@ namespace MikroLab.Core.Assembler
             new SampleProgram("Сумма 1…5", SumOneToFive),
             new SampleProgram("Переключатели → лампы", TumblersToLamps),
             new SampleProgram("Регистры (лаб. 1)", RegisterLab),
+            new SampleProgram("Логические операции", LogicLab),
+            new SampleProgram("Циклы", LoopsLab),
+            new SampleProgram("Порты ВВ55", PortsLab),
             new SampleProgram("УМК · огни с 0800h", UmkRunningLight)
         };
 
@@ -155,6 +158,64 @@ LOOP:   IN 0FAh           ; SA1..SA3 → A
         STA 8201h         ; сохранить A
         MOV A, M          ; A ← 8000h
         STA 8202h
+        HLT
+
+        END
+";
+
+        public const string LogicLab =
+@"; MikroLab Studio · логические операции
+; A = ((F0h AND 3Ch) OR 03h) XOR FFh
+
+        ORG 8000h
+
+        MVI A, 90h
+        OUT 0FBh
+
+        MVI A, 0F0h
+        ANI 3Ch
+        ORI 03h
+        XRI 0FFh
+
+        STA 8200h
+        OUT 0F9h
+        HLT
+
+        END
+";
+
+        public const string LoopsLab =
+@"; MikroLab Studio · циклы
+; Сумма 1..5, результат в 8200h и на лампах.
+
+        ORG 8000h
+
+        MVI B, 05h
+        MVI A, 00h
+
+LOOP:   ADD B
+        DCR B
+        JNZ LOOP
+
+        STA 8200h
+        OUT 0F9h
+        HLT
+
+        END
+";
+
+        public const string PortsLab =
+@"; MikroLab Studio · порты ВВ55
+; Чтение порта A и вывод на лампы порта B.
+
+        ORG 8000h
+
+        MVI A, 90h
+        OUT 0FBh
+
+        IN 0FAh
+        STA 8200h
+        OUT 0F9h
         HLT
 
         END

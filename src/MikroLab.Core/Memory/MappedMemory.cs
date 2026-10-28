@@ -39,6 +39,14 @@ namespace MikroLab.Core.Memory
         private readonly List<Registration> _readers = new List<Registration>();
         private readonly List<Registration> _writers = new List<Registration>();
 
+        /// <summary>
+        /// Raised for every CPU-facing read or write after the value has been
+        /// resolved. Device registration itself never raises the event, and
+        /// raw <see cref="NibbleMemory"/> access bypasses it. Debuggers use
+        /// this to implement read/write watchpoints.
+        /// </summary>
+        public event Action<ushort, byte, MemoryAccess> MemoryAccessed;
+
         public MappedMemory(NibbleMemory raw)
         {
             _raw = raw ?? throw new ArgumentNullException(nameof(raw));
@@ -97,9 +105,11 @@ namespace MikroLab.Core.Memory
         public byte ReadByte(ushort address)
         {
             Registration registration = Find(_readers, address);
-            return registration != null
+            byte value = registration != null
                 ? registration.Device.ReadMemory(address)
                 : _raw.ReadByte(address);
+            MemoryAccessed?.Invoke(address, value, MemoryAccess.Read);
+            return value;
         }
 
         public void WriteByte(ushort address, byte value)
@@ -108,6 +118,7 @@ namespace MikroLab.Core.Memory
             // without device state still shows the bytes the program wrote.
             _raw.WriteByte(address, value);
             Find(_writers, address)?.Device.WriteMemory(address, value);
+            MemoryAccessed?.Invoke(address, value, MemoryAccess.Write);
         }
 
         public void GetNibbles(int address, out int signif, out int lower)

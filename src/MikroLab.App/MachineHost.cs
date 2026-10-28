@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MikroLab.Core.Assembler;
 using MikroLab.Core.Cpu;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Devices;
 using MikroLab.Core.Formats;
 using MikroLab.Core.Machine;
@@ -31,8 +32,10 @@ namespace MikroLab.App
         private readonly Machine _machine;
         private readonly MachineSession _session;
         private readonly HashSet<int> _breakpointLines = new HashSet<int>();
+        private readonly HashSet<ushort> _manualBreakpoints = new HashSet<ushort>();
         private readonly Dictionary<int, ushort> _lineAddresses = new Dictionary<int, ushort>();
         private readonly List<AddressRange> _ranges = new List<AddressRange>();
+        private readonly List<MemoryWatchpoint> _watchpoints = new List<MemoryWatchpoint>();
         private ushort _entryPoint = 0x8000;
         private MachineProfile _profile = MachineProfile.Vntu;
         private bool _disposed;
@@ -62,6 +65,8 @@ namespace MikroLab.App
         public Machine Machine => _machine;
         public MachineSession Session => _session;
         public RunState State => _session.State;
+        public ExecutionLog ExecutionLog => _session.ExecutionLog;
+        public bool CanStepBack => _session.CanStepBack;
         public bool IsProgramLoaded { get; private set; }
         public AssembleResult LastAssembly { get; private set; }
         public string LastSource { get; private set; } = string.Empty;
@@ -124,6 +129,7 @@ namespace MikroLab.App
 
             BuildAddressMap(result);
             ApplyBreakpoints();
+            _session.ClearExecutionLog();
             _entryPoint = entry;
             IsProgramLoaded = true;
 
@@ -216,7 +222,8 @@ namespace MikroLab.App
 
             _lineAddresses.Clear();
             _ranges.Clear();
-            ClearBreakpoints();
+            ClearAllBreakpoints();
+            _session.ClearExecutionLog();
             _entryPoint = start;
             IsProgramLoaded = true;
             LastAssembly = null;
@@ -268,7 +275,8 @@ namespace MikroLab.App
 
             _lineAddresses.Clear();
             _ranges.Clear();
-            ClearBreakpoints();
+            ClearAllBreakpoints();
+            _session.ClearExecutionLog();
             _entryPoint = image.PC;
             IsProgramLoaded = true;
             LastAssembly = null;
@@ -345,7 +353,8 @@ namespace MikroLab.App
 
             _lineAddresses.Clear();
             _ranges.Clear();
-            ClearBreakpoints();
+            ClearAllBreakpoints();
+            _session.ClearExecutionLog();
             _entryPoint = (ushort)start;
             IsProgramLoaded = true;
             LastAssembly = null;
@@ -402,7 +411,8 @@ namespace MikroLab.App
 
             _lineAddresses.Clear();
             _ranges.Clear();
-            ClearBreakpoints();
+            ClearAllBreakpoints();
+            _session.ClearExecutionLog();
             _entryPoint = state.EntryPoint;
             IsProgramLoaded = state.ProgramLoaded;
             LastAssembly = null;
@@ -609,6 +619,142 @@ namespace MikroLab.App
             ApplyBreakpoints();
         }
 
+        public void ClearAllBreakpoints()
+        {
+            _breakpointLines.Clear();
+            _manualBreakpoints.Clear();
+            _watchpoints.Clear();
+            _session.ClearWatchpoints();
+            ApplyBreakpoints();
+        }
+
+        public IReadOnlyCollection<ushort> ManualBreakpoints => _manualBreakpoints;
+
+        public bool ToggleAddressBreakpoint(ushort address)
+        {
+            bool added;
+            if (_manualBreakpoints.Contains(address))
+            {
+                _manualBreakpoints.Remove(address);
+                added = false;
+            }
+            else
+            {
+                _manualBreakpoints.Add(address);
+                added = true;
+            }
+            ApplyBreakpoints();
+            return added;
+        }
+
+        public void AddAddressBreakpoint(ushort address)
+        {
+            if (_manualBreakpoints.Add(address)) ApplyBreakpoints();
+        }
+
+        public void RemoveAddressBreakpoint(ushort address)
+        {
+            if (_manualBreakpoints.Remove(address)) ApplyBreakpoints();
+        }
+
+        public void AddWatchpoint(ushort address, MemoryAccess access)
+        {
+            var watchpoint = new MemoryWatchpoint(address, access);
+            if (!_watchpoints.Contains(watchpoint))
+            {
+                _watchpoints.Add(watchpoint);
+                _session.SetWatchpoints(_watchpoints);
+            }
+        }
+
+        public void RemoveWatchpoint(MemoryWatchpoint watchpoint)
+        {
+            if (_watchpoints.Remove(watchpoint))
+            {
+                _session.SetWatchpoints(_watchpoints);
+            }
+        }
+
+        public ushort[] AddressBreakpoints => _session.GetBreakpoints();
+
+        public MemoryWatchpoint[] Watchpoints => _session.GetWatchpoints();
+
+        public void ClearWatchpoints()
+        {
+            _watchpoints.Clear();
+            _session.ClearWatchpoints();
+        }
+
+        public void StepBack()
+        {
+            if (_session.StepBack())
+            {
+                Output?.Invoke("Шаг назад · PC=" + CurrentPc().ToString("X4") + "h", LogLevel.Info);
+            }
+            else
+            {
+                Output?.Invoke("Нет снимков для шага назад.", LogLevel.Warning);
+            }
+        }
+
+        public void RunTo(ushort address)
+        {
+            if (_session.State == RunState.Halted)
+            {
+                Output?.Invoke("Процессор остановлен (HLT). Сначала выполните сброс.", LogLevel.Warning);
+                return;
+            }
+            if (!IsProgramLoaded)
+            {
+                Output?.Invoke("Сначала соберите программу (F7).", LogLevel.Warning);
+                return;
+            }
+
+            _session.RunTo(address);
+            Output?.Invoke("Выполнение до " + address.ToString("X4") + "h", LogLevel.Info);
+        }
+
+        public void ClearExecutionLog()
+        {
+            _session.ClearExecutionLog();
+            Output?.Invoke("Журнал очищен", LogLevel.Info);
+        }
+
+        public void ExportExecutionLog(string path, ExecutionLogFormat format)
+        {
+            if (_session.State == RunState.Running) _session.Pause();
+            _session.ExecutionLog.Save(path, format);
+            Output?.Invoke("Журнал сохранён · " + path, LogLevel.Success);
+        }
+
+        public void ToggleFlag(string name)
+        {
+            if (name == null) return;
+            if (_session.State == RunState.Running)
+            {
+                Output?.Invoke("Остановите выполнение, чтобы редактировать флаги.", LogLevel.Warning);
+                return;
+            }
+
+            _session.WithMachine(machine =>
+            {
+                FlagReg flags = machine.Cpu.State.Flags;
+                switch (name.Trim().ToUpperInvariant())
+                {
+                    case "C": flags.C = !flags.C; break;
+                    case "Z": flags.Z = !flags.Z; break;
+                    case "S": flags.S = !flags.S; break;
+                    case "P": flags.P = !flags.P; break;
+                    case "AC": flags.AC = !flags.AC; break;
+                    default: return;
+                }
+                machine.Cpu.State.Flags = flags;
+                machine.Cpu.State.F = flags.ToByte();
+            });
+
+            Output?.Invoke("Флаг · " + name.ToUpperInvariant() + " переключён", LogLevel.Info);
+        }
+
         private void ApplyBreakpoints()
         {
             var addresses = new List<ushort>();
@@ -619,19 +765,18 @@ namespace MikroLab.App
                     addresses.Add(address);
                 }
             }
-            _session.SetBreakpoints(addresses);
+            foreach (ushort address in _manualBreakpoints)
+            {
+                addresses.Add(address);
+            }
+            _session.SetBreakpoints(addresses.Distinct());
         }
 
         public int ActiveBreakpointCount
         {
             get
             {
-                int count = 0;
-                foreach (int line in _breakpointLines)
-                {
-                    if (_lineAddresses.ContainsKey(line)) count++;
-                }
-                return count;
+                return _session.GetBreakpoints().Length;
             }
         }
 
