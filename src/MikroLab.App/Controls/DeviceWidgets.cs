@@ -360,10 +360,12 @@ namespace MikroLab.App.Controls
         private readonly LedBar _lamps;
         private readonly ToggleSwitch[] _tumblers = new ToggleSwitch[3];
         private readonly VoltageSlider[] _sliders = new VoltageSlider[4];
+        private readonly MatrixKeyboardControl _keyboard;
         private bool _syncing;
 
         public event Action<int, bool> TumblerChanged;
         public event Action<int, double> AnalogChanged;
+        public event Action<int, int, bool> KeyChanged;
 
         public DevicesPanel()
         {
@@ -468,7 +470,23 @@ namespace MikroLab.App.Controls
             };
             AddControlRow(stack, ref row, _adc);
 
+            AddSection(stack, ref row, "МАТРИЧНАЯ КЛАВИАТУРА · ПОРТ C");
+            _keyboard = new MatrixKeyboardControl
+            {
+                Dock = DockStyle.Top,
+                Height = 190,
+                Margin = new Padding(0, 0, 0, 6)
+            };
+            _keyboard.KeyChanged += (rowIndex, column, pressed) =>
+                KeyChanged?.Invoke(rowIndex, column, pressed);
+            AddControlRow(stack, ref row, _keyboard);
+
             Controls.Add(stack);
+        }
+
+        public void AttachKeyboard(MikroLab.Core.Devices.MatrixKeyboard keyboard)
+        {
+            _keyboard?.Attach(keyboard);
         }
 
         private static void AddSection(TableLayoutPanel stack, ref int row, string title)
@@ -565,6 +583,7 @@ namespace MikroLab.App.Controls
                 }
 
                 _adc.Text = "АЦП: " + snapshot.AdcValue + " · канал " + snapshot.SelectedAnalogChannel;
+                _keyboard?.SyncFromModel();
             }
             finally
             {

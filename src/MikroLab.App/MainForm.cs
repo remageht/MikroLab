@@ -26,6 +26,8 @@ namespace MikroLab.App
         }
 
         private readonly MachineHost _host;
+        private readonly IFileDialogService _files;
+        private readonly IScreenshotService _screenshots;
         private readonly StudioWorkspace _studio;
         private readonly LaboratoryWorkspace _laboratory;
         private readonly Panel _content;
@@ -43,6 +45,7 @@ namespace MikroLab.App
         private readonly Label _cyclesLabel;
         private readonly Label _pcLabel;
         private readonly Label _breakpointLabel;
+        private readonly Label _reasonLabel;
         private readonly Label _workspaceLabel;
 
         private Workspace _workspace = Workspace.Studio;
@@ -69,6 +72,8 @@ namespace MikroLab.App
             KeyPreview = true;
 
             _host = new MachineHost();
+            _files = new Services.WinFormsFileDialogService(() => this);
+            _screenshots = new Services.WinFormsScreenshotService(() => this);
             _toolTips = new ToolTip
             {
                 AutoPopDelay = 8000,
@@ -240,7 +245,7 @@ namespace MikroLab.App
                 Margin = new Padding(0)
             };
 
-            _studio = new StudioWorkspace(_host) { Dock = DockStyle.Fill };
+            _studio = new StudioWorkspace(_host, _files) { Dock = DockStyle.Fill };
             _laboratory = new LaboratoryWorkspace(_host) { Dock = DockStyle.Fill, Visible = false };
             _studio.DocumentTitleChanged += UpdateTitle;
             _laboratory.OpenInStudioRequested += OpenLabInStudio;
@@ -286,6 +291,9 @@ namespace MikroLab.App
             _cyclesLabel = MakeStatusLabel("тактов: 0", AppTheme.TextMuted);
             _pcLabel = MakeStatusLabel("PC 8000h", AppTheme.Cyan);
             _breakpointLabel = MakeStatusLabel("точек останова: 0", AppTheme.TextMuted);
+            _reasonLabel = MakeStatusLabel(string.Empty, AppTheme.TextMuted);
+            _reasonLabel.Dock = DockStyle.Fill;
+            _reasonLabel.TextAlign = ContentAlignment.MiddleLeft;
             _workspaceLabel = MakeStatusLabel("Студия", AppTheme.TextDim);
             _workspaceLabel.TextAlign = ContentAlignment.MiddleRight;
             _workspaceLabel.Dock = DockStyle.Fill;
@@ -303,7 +311,7 @@ namespace MikroLab.App
             statusLayout.Controls.Add(_pcLabel, 2, 0);
             statusLayout.Controls.Add(_cyclesLabel, 3, 0);
             statusLayout.Controls.Add(_breakpointLabel, 4, 0);
-            statusLayout.Controls.Add(new Panel { Dock = DockStyle.Fill, BackColor = AppTheme.Surface }, 5, 0);
+            statusLayout.Controls.Add(_reasonLabel, 5, 0);
             statusLayout.Controls.Add(_workspaceLabel, 6, 0);
             status.Controls.Add(statusLayout);
 
@@ -446,6 +454,12 @@ namespace MikroLab.App
             _pcLabel.Text = "PC " + snapshot.PC.ToString("X4", CultureInfo.InvariantCulture) + "h";
             _cyclesLabel.Text = "тактов: " + snapshot.Cycles.ToString("N0", CultureInfo.InvariantCulture);
             _breakpointLabel.Text = "точек останова: " + _host.ActiveBreakpointCount;
+
+            string reason = state == RunState.Paused || state == RunState.Halted
+                ? _host.StopReason
+                : string.Empty;
+            if (_reasonLabel.Text != reason) _reasonLabel.Text = reason;
+            _reasonLabel.ForeColor = state == RunState.Halted ? AppTheme.Red : AppTheme.TextMuted;
         }
 
         private void UpdateTitle()
@@ -699,7 +713,7 @@ namespace MikroLab.App
                         break;
 
                     case 12:
-                        _studio.HostLoadSample(6);
+                        _studio.HostLoadSample(9);
                         _laboratory.SelectLab(5);
                         _host.WithMachine(machine =>
                         {
@@ -758,11 +772,7 @@ namespace MikroLab.App
             Application.DoEvents();
             System.Threading.Thread.Sleep(90);
 
-            using (var bitmap = new Bitmap(Width, Height))
-            {
-                DrawToBitmap(bitmap, new Rectangle(0, 0, Width, Height));
-                bitmap.Save(Path.Combine(_captureDirectory, fileName), System.Drawing.Imaging.ImageFormat.Png);
-            }
+            _screenshots.Capture(Path.Combine(_captureDirectory, fileName));
 
             _uiTimer.Start();
         }

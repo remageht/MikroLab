@@ -227,6 +227,9 @@ namespace MikroLab.Core.Machine
                 {
                     _runToAddress = -1;
                     _pauseReason = (int)PauseReason.None;
+                    // A fresh run starts a fresh journal. Step/run-to keep the
+                    // existing log so a paused debugging session is not lost.
+                    _executionLog.Clear();
                 }
 
                 // Resume from a breakpoint at the current PC: execute the
@@ -325,7 +328,7 @@ namespace MikroLab.Core.Machine
                     ? I8080Disassembler.Decode(_machine.Memory, pc)
                     : default;
 
-                _stepHistory.Push(_machine.Capture());
+                _stepHistory.Push(_machine.Capture(), log);
                 _machine.State = RunState.Running;
                 bool ok = _machine.Step();
                 if (log)
@@ -368,7 +371,14 @@ namespace MikroLab.Core.Machine
             MachineSnapshot snapshot;
             lock (_lock)
             {
-                if (!_stepHistory.TryPop(out snapshot)) return false;
+                if (!_stepHistory.TryPop(out snapshot, out bool logged)) return false;
+
+                // Rewind the matching journal entry as well; otherwise the log
+                // keeps instructions that were undone by this step.
+                if (logged)
+                {
+                    _executionLog.RemoveLast();
+                }
 
                 _breakpointAddress = -1;
                 _skipBreakpointOnce = -1;

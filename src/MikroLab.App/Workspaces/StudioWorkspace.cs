@@ -14,6 +14,7 @@ namespace MikroLab.App.Workspaces
     internal sealed class StudioWorkspace : UserControl
     {
         private readonly MachineHost _host;
+        private readonly IFileDialogService _files;
         private readonly CodeEditor _editor;
         private readonly OutputPanel _output;
         private readonly RegisterPanel _registers;
@@ -45,9 +46,10 @@ namespace MikroLab.App.Workspaces
 
         public event Action DocumentTitleChanged;
 
-        public StudioWorkspace(MachineHost host)
+        public StudioWorkspace(MachineHost host, IFileDialogService files)
         {
-            _host = host;
+            _host = host ?? throw new ArgumentNullException(nameof(host));
+            _files = files ?? throw new ArgumentNullException(nameof(files));
             BackColor = AppTheme.Window;
 
             var root = new TableLayoutPanel
@@ -302,29 +304,33 @@ namespace MikroLab.App.Workspaces
             _memory = new MemoryPanel { Dock = DockStyle.Fill };
             _memory.ByteWriteRequested += OnMemoryWrite;
             _devices = new DevicesPanel { Dock = DockStyle.Fill };
+            _devices.AttachKeyboard(_host.Keyboard);
             _devices.TumblerChanged += OnTumblerChanged;
             _devices.AnalogChanged += OnAnalogChanged;
+            _devices.KeyChanged += OnKeyChanged;
             _stack = new StackPanel { Dock = DockStyle.Fill };
             _logPanel = new ExecutionLogPanel { Dock = DockStyle.Fill };
             _logPanel.ClearRequested += () => { _host.ClearExecutionLog(); _logPanel.RefreshLog(_host.ExecutionLog, true); };
             _logPanel.ExportRequested += format =>
             {
-                using (var dialog = new SaveFileDialog())
+                string path = _files.SaveFile(new FileDialogRequest
                 {
-                    dialog.Title = "Экспорт журнала";
-                    dialog.Filter = format == ExecutionLogFormat.Csv
+                    Title = "Экспорт журнала",
+                    Filter = format == ExecutionLogFormat.Csv
                         ? "CSV (*.csv)|*.csv|Все файлы (*.*)|*.*"
-                        : "Markdown (*.md)|*.md|Все файлы (*.*)|*.*";
-                    dialog.FileName = format == ExecutionLogFormat.Csv ? "execution-log.csv" : "execution-log.md";
-                    if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
-                    try
-                    {
-                        _host.ExportExecutionLog(dialog.FileName, format);
-                    }
-                    catch (Exception ex)
-                    {
-                        _output.Log("Не удалось экспортировать журнал: " + ex.Message, LogLevel.Error);
-                    }
+                        : "Markdown (*.md)|*.md|Все файлы (*.*)|*.*",
+                    DefaultFileName = format == ExecutionLogFormat.Csv
+                        ? "execution-log.csv"
+                        : "execution-log.md"
+                });
+                if (path == null) return;
+                try
+                {
+                    _host.ExportExecutionLog(path, format);
+                }
+                catch (Exception ex)
+                {
+                    _output.Log("Не удалось экспортировать журнал: " + ex.Message, LogLevel.Error);
                 }
             };
 
@@ -549,6 +555,11 @@ namespace MikroLab.App.Workspaces
             _host.WithMachine(machine => machine.Analog.SetChannel(channel, value));
         }
 
+        private void OnKeyChanged(int row, int column, bool pressed)
+        {
+            _host.SetKeyState(row, column, pressed);
+        }
+
         // ------------------------------------------------------------------ files
 
         private void NewDocument()
@@ -574,33 +585,34 @@ namespace MikroLab.App.Workspaces
         {
             if (!ConfirmDiscard()) return;
 
-            using (var dialog = new OpenFileDialog())
+            string path = _files.OpenFile(new FileDialogRequest
             {
-                dialog.Title = "Открыть программу";
-                dialog.Filter = "Ассемблер 8080 (*.asm;*.a80)|*.asm;*.a80|Все файлы (*.*)|*.*";
-                if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                Title = "Открыть программу",
+                Filter = "Ассемблер 8080 (*.asm;*.a80)|*.asm;*.a80|Все файлы (*.*)|*.*",
+                CheckFileExists = true
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _suppressDirty = true;
-                    _editor.Code = File.ReadAllText(dialog.FileName);
-                    _suppressDirty = false;
-                    _filePath = dialog.FileName;
-                    _loadingSample = true;
-                    _currentSampleIndex = -1;
-                    _sampleBox.SelectIndex(-1);
-                    _loadingSample = false;
-                    _dirty = false;
-                    _programLoaded = false;
-                    _output.Log("Открыто · " + dialog.FileName);
-                    UpdateDocumentHeader();
-                    AssembleProgram();
-                }
-                catch (Exception ex)
-                {
-                    _suppressDirty = false;
-                    _output.Log("Не удалось открыть файл: " + ex.Message, LogLevel.Error);
-                }
+            try
+            {
+                _suppressDirty = true;
+                _editor.Code = File.ReadAllText(path);
+                _suppressDirty = false;
+                _filePath = path;
+                _loadingSample = true;
+                _currentSampleIndex = -1;
+                _sampleBox.SelectIndex(-1);
+                _loadingSample = false;
+                _dirty = false;
+                _programLoaded = false;
+                _output.Log("Открыто · " + path);
+                UpdateDocumentHeader();
+                AssembleProgram();
+            }
+            catch (Exception ex)
+            {
+                _suppressDirty = false;
+                _output.Log("Не удалось открыть файл: " + ex.Message, LogLevel.Error);
             }
         }
 
@@ -627,17 +639,17 @@ namespace MikroLab.App.Workspaces
 
         private void SaveDocumentAs()
         {
-            using (var dialog = new SaveFileDialog())
+            string path = _files.SaveFile(new FileDialogRequest
             {
-                dialog.Title = "Сохранить программу";
-                dialog.Filter = "Ассемблер 8080 (*.asm)|*.asm|Все файлы (*.*)|*.*";
-                dialog.FileName = Path.GetFileName(_filePath ?? "main.asm");
-                if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                Title = "Сохранить программу",
+                Filter = "Ассемблер 8080 (*.asm)|*.asm|Все файлы (*.*)|*.*",
+                DefaultFileName = Path.GetFileName(_filePath ?? "main.asm")
+            });
+            if (path == null) return;
 
-                _filePath = dialog.FileName;
-                SaveDocument();
-                UpdateDocumentHeader();
-            }
+            _filePath = path;
+            SaveDocument();
+            UpdateDocumentHeader();
         }
 
         private bool ConfirmDiscard()
@@ -744,7 +756,7 @@ namespace MikroLab.App.Workspaces
         {
             if (snapshot == null) return;
 
-            _registers.UpdateSnapshot(snapshot);
+            _registers.UpdateSnapshot(snapshot, _host.LastLogEntry);
             _memory.UpdateSnapshot(snapshot);
             _devices.UpdateSnapshot(snapshot);
 

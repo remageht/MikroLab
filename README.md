@@ -30,17 +30,24 @@
   сохранение и загрузка полного состояния машины;
 - профили памяти **ВНТУ** (`8000h`/`83F0h`) и **УМК** (`0800h`/`0FFFh`) с
   настраиваемыми ORG, начальным PC и SP;
-- панель устройств: семисегментные индикаторы, светодиоды, переключатели и АЦП;
+- панель устройств: семисегментные индикаторы, светодиоды, переключатели,
+  АЦП и матричная клавиатура 4×4 на порту C;
 - журнал сборки и список ошибок с переходом к нужной строке;
 - готовые примеры, включая пример для профиля УМК, и шаблон нового проекта,
-  открытие и сохранение `.asm`.
+  открытие и сохранение `.asm`;
+- отладчик: точки останова по строке и адресу, наблюдение чтения/записи памяти,
+  выполнение до адреса, шаг назад и журнал выполнения с экспортом в CSV/Markdown;
+- замедленная анимация сдвигов `RLC`/`RRC`/`RAL`/`RAR` в инспекторе регистров.
 
 ### Лаборатория
 
-- шесть учебных работ с описанием, порядком выполнения и привязкой к примеру;
+- семь учебных работ с описанием, порядком выполнения и привязкой к примеру;
 - единый аппаратный стенд: индикаторы, лампы, тумблеры SA1…SA3, аналоговые
-  датчики и АЦП;
+  датчики, АЦП и матричная клавиатура 4×4;
 - живое обновление всех приборов во время выполнения программы;
+- эталонные результаты `A`, `DE` и ячеек памяти для детерминированных работ
+  и автоматическая проверка после останова по `HLT` (кнопка «Проверить»
+  работает и в ручной паузе);
 - кнопка перехода из лабораторной работы прямо в студию;
 - общая машина для обеих областей: программа, запущенная в студии, продолжает
   работать на стенде.
@@ -52,7 +59,8 @@
 - тёмная тема, высокое DPI, аккуратные настраиваемые элементы управления;
 - никаких NuGet-пакетов: только .NET и WinForms;
 - ядро полностью отделено от интерфейса и покрыто тестами;
-- кроссплатформенные ядро, CLI и тесты; WinForms-интерфейс работает в Windows;
+- кроссплатформенные ядро, презентационный слой, CLI и тесты; WinForms-интерфейс
+  работает в Windows;
 - CI-матрица проверяет сборку на Windows, Linux и macOS;
 - встроенный режим снятия скриншотов для документации и регрессий.
 
@@ -76,7 +84,7 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 
 ## Релизы
 
-Текущая версия — **1.0.0**. Теги и готовые сборки публикуются на странице
+Текущая версия — **1.1.0**. Теги и готовые сборки публикуются на странице
 [GitHub Releases](https://github.com/remageht/MikroLab/releases), история
 изменений — в [CHANGELOG.md](CHANGELOG.md).
 
@@ -88,18 +96,20 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
   — кроссплатформенный CLI с ядром и тестами;
 - исходные архивы GitHub и тег для сборки Core/CLI на любой платформе.
 
-WinForms-оболочка пока остаётся Windows-временной; `MikroLab.Core`,
+WinForms-оболочка пока остаётся Windows-временной; презентационный слой
+`MikroLab.Presentation` уже отделён от WinForms, а `MikroLab.Core`,
 `MikroLab.Cli` и тесты собираются и проходят на Windows, Linux и macOS.
-Перенос интерфейса на Avalonia запланирован после выделения ViewModels и
-сервисных интерфейсов.
+Перенос интерфейса на Avalonia запланирован после наполнения этого слоя
+моделями представления.
 
 ### CLI на Windows, Linux и macOS
 
-`MikroLab.Core`, `MikroLab.Cli` и тесты не зависят от WinForms и собираются
-кроссплатформенно:
+`MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Cli` и тесты не зависят от
+WinForms и собираются кроссплатформенно:
 
 ```bash
 dotnet build src/MikroLab.Core/MikroLab.Core.csproj
+dotnet build src/MikroLab.Presentation/MikroLab.Presentation.csproj
 dotnet build src/MikroLab.Cli/MikroLab.Cli.csproj
 dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj
 ```
@@ -126,6 +136,9 @@ src\MikroLab.App\bin\Debug\net10.0-windows\MikroLab.exe --capture docs\screens
 | `F7` | собрать |
 | `F8` | выполнить одну команду |
 | `F9` | поставить или снять точку останова в текущей строке |
+| `Ctrl+F5` | выполнить до адреса |
+| `Ctrl+B` | точки останова и наблюдения |
+| `Ctrl+F10` | шаг назад |
 | `Ctrl+R` | сброс процессора |
 | `Ctrl+N` | новый проект |
 | `Ctrl+O` | открыть программу |
@@ -230,7 +243,7 @@ Linux и macOS. Полная справка — `MikroLab.Cli --help`.
 
 ```text
 MikroLab.Cli assemble <source.asm> [-o <out.hex>] [--listing]
-MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--trace] [--dump]
+MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--run-to XXXX] [--log <file.csv|file.md>] [--trace] [--dump]
 MikroLab.Cli step <source|file.bin|file.580> [--count N]
 MikroLab.Cli dump <source|file.bin|file.580> [--start XXXX] [--length N]
 MikroLab.Cli hex <file.hex|file.bin> -o <output> [--start XXXX] [--start-record]
@@ -246,6 +259,12 @@ dotnet run --project src/MikroLab.Cli -- assemble program.asm -o program.hex --l
 
 # выполнить до HLT и вывести память
 dotnet run --project src/MikroLab.Cli -- run program.asm --dump
+
+# остановиться перед адресом и записать журнал выполнения
+dotnet run --project src/MikroLab.Cli -- run program.asm --run-to 8010 --log trace.csv
+
+# тот же журнал в Markdown
+dotnet run --project src/MikroLab.Cli -- run program.asm --log trace.md
 
 # выполнить 10 команд и сохранить состояние
 dotnet run --project src/MikroLab.Cli -- state save program.asm -o demo.json --steps 10
@@ -273,7 +292,8 @@ dotnet run --project src/MikroLab.Cli -- hex program.bin -o back.hex --start-rec
 | `OUT 0FBh` | управляющее слово ВВ55 (режимы 0…2 и направления) |
 | `OUT 0F9h` | восемь светодиодов, порт B ВВ55 |
 | `IN 0FAh` | тумблеры SA1…SA3 на PA0…PA2, порт A ВВ55 |
-| `OUT 0F8h` | порт C ВВ55 (стробы и служебные линии) |
+| `OUT 0F8h` | порт C ВВ55: PC0…PC3 выбирают строки матричной клавиатуры (активный низкий) |
+| `IN 0F8h` | порт C ВВ55: PC4…PC7 читают столбцы матричной клавиатуры (активный низкий) |
 | `OUT 01h` | совместимость: то же, что `OUT 0F9h` (порт B) |
 | `OUT 02h` | совместимость: управляющий регистр ВВ55 |
 | `OUT FDh` | выбор канала аналогового мультиплексора (0…3) |
@@ -312,8 +332,11 @@ MikroLab/
 │  │  ├─ Assembler/           # двухпроходный ассемблер и примеры
 │  │  ├─ Formats/             # Intel HEX, .580, состояние машины
 │  │  └─ Machine/             # машина, сессия, снимки и профили памяти
+│  ├─ MikroLab.Presentation/   # портируемый слой: MachineHost, каталог работ, проверка
+│  │  └─ Services/            # IFileDialogService, IScreenshotService
 │  ├─ MikroLab.App/           # WinForms-интерфейс (Windows)
-│  │  ├─ Controls/            # редактор, память, приборы, инспектор
+│  │  ├─ Controls/            # редактор, память, приборы, клавиатура, инспектор
+│  │  ├─ Services/            # WinForms-реализации диалогов и снимков
 │  │  ├─ Workspaces/          # студия и лаборатория
 │  │  └─ MainForm.cs          # оболочка, горячие клавиши, скриншоты
 │  └─ MikroLab.Cli/           # кроссплатформенный консольный инструмент
@@ -341,6 +364,14 @@ MikroLab/
   округление снимка и отказ от файлов неверного размера;
 - профили памяти ВНТУ/УМК и шаблон проекта с выбранным ORG;
 - состояние машины: сериализация, проверка версии и восстановление;
+- матричная клавиатура: активный низкий скан строк/столбцов, 3×4 и 4×4,
+  интеграция с портом C и пример сканирования;
+- лабораторный каталог: семь работ, эталоны `A`/`DE`/памяти и автоматическая
+  проверка, включая сообщение «эталон не задан» для интерактивных работ;
+- математика `RLC`/`RRC`/`RAL`/`RAR` и совпадение с командами процессора;
+- точки останова и наблюдения: сохранение при пересборке, независимое
+  удаление, причины остановки;
+- шаг назад: восстановление регистра `M` и обрезка журнала выполнения;
 - интеграционный сценарий «собрать → загрузить → выполнить → устройства».
 
 Ожидаемый результат: `ALL TEST SUITES PASSED (0 failures)`.
@@ -350,7 +381,8 @@ MikroLab/
 `.github/workflows/ci.yml` собирает и тестирует проект в трёх окружениях:
 
 - **Windows** — всё решение, включая WinForms-приложение;
-- **Ubuntu** и **macOS** — `MikroLab.Core`, `MikroLab.Cli` и тесты.
+- **Ubuntu** и **macOS** — `MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Cli`
+  и тесты.
 
 Это подтверждает, что ядро и консольные сценарии не зависят от Windows, а
 графический интерфейс остаётся отдельным Windows-слоем.

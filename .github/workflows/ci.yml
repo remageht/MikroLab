@@ -44,6 +44,8 @@ jobs:
           dotnet-version: 10.0.x
       - name: Build Core
         run: dotnet build src/MikroLab.Core/MikroLab.Core.csproj -c Release -v minimal
+      - name: Build Presentation
+        run: dotnet build src/MikroLab.Presentation/MikroLab.Presentation.csproj -c Release -v minimal
       - name: Build CLI
         run: dotnet build src/MikroLab.Cli/MikroLab.Cli.csproj -c Release -v minimal
       - name: Build tests

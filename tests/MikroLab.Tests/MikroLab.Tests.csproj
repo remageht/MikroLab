@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MikroLab.Core\MikroLab.Core.csproj" />
+    <ProjectReference Include="..\..\src\MikroLab.Presentation\MikroLab.Presentation.csproj" />
   </ItemGroup>
 
   <Target Name="VSTest">

@@ -23,14 +23,17 @@ namespace MikroLab.Tests
             Test_Disassembler_RepresentativeOpcodes();
             Test_Disassembler_AllOpcodes();
             Test_ExecutionLog_CsvAndMarkdown();
+            Test_ExecutionLog_RemoveLast();
             Test_StepHistory_Ring();
             Test_Session_StepBack();
+            Test_Session_StepBack_RewindsLog();
             Test_Session_RunTo();
             Test_Session_RunToImmediate();
             Test_Session_WatchpointWrite();
             Test_Session_WatchpointRead();
             Test_Session_ExecutionLog();
             Test_MemoryWatchpoint_Matches();
+            Test_Machine_Restore_M();
             Console.WriteLine("  All DebuggerTests PASSED.\n");
         }
 
@@ -197,6 +200,30 @@ namespace MikroLab.Tests
             Console.WriteLine("  [PASS] execution log CSV/Markdown and ring");
         }
 
+        private static void Test_ExecutionLog_RemoveLast()
+        {
+            var log = new ExecutionLog(8);
+            log.Append(new ExecutionLogEntry { Address = 0x8000, Instruction = "NOP" });
+            log.Append(new ExecutionLogEntry { Address = 0x8001, Instruction = "NOP" });
+            Assert(log.Count == 2, "log must contain two entries");
+            Assert(log.GetLast(1)[0].Step == 2, "second entry must have Step 2");
+
+            Assert(log.RemoveLast(), "RemoveLast must succeed on a non-empty log");
+            Assert(log.Count == 1, "RemoveLast must decrement the count");
+            Assert(log.GetLast(1)[0].Address == 0x8000, "RemoveLast must drop the newest entry");
+
+            log.Append(new ExecutionLogEntry { Address = 0x8002, Instruction = "NOP" });
+            Assert(log.Count == 2, "append after RemoveLast must reuse the slot");
+            Assert(log.GetLast(1)[0].Step == 2, "append after RemoveLast must not skip a step");
+
+            Assert(log.RemoveLast(), "second RemoveLast must succeed");
+            Assert(log.RemoveLast(), "third RemoveLast must succeed");
+            Assert(!log.RemoveLast(), "RemoveLast must fail on an empty log");
+            Assert(log.IsEmpty, "log must be empty after removing everything");
+
+            Console.WriteLine("  [PASS] execution log RemoveLast rewinds the step counter");
+        }
+
         private static void Test_StepHistory_Ring()
         {
             var history = new StepHistory(100);
@@ -271,6 +298,39 @@ namespace MikroLab.Tests
 
             Assert(!session.StepBack(), "StepBack must fail when history is empty");
             Console.WriteLine("  [PASS] session step back");
+        }
+
+        private static void Test_Session_StepBack_RewindsLog()
+        {
+            var machine = new Machine(profile: CpuProfile.Extended);
+            machine.Memory.WriteByte(0x8000, 0x3E); // MVI A,55h
+            machine.Memory.WriteByte(0x8001, 0x55);
+            machine.Memory.WriteByte(0x8002, 0x06); // MVI B,66h
+            machine.Memory.WriteByte(0x8003, 0x66);
+            machine.Memory.WriteByte(0x8004, 0x76); // HLT
+            machine.Cpu.State.PC = 0x8000;
+            machine.Cpu.State.SP = 0x83F0;
+
+            using var session = new MachineSession(machine);
+            session.LogExecution = true;
+            session.ThrottleLikeOriginal = false;
+
+            session.Step();
+            session.Step();
+            Assert(session.ExecutionLog.Count == 2, "two steps must log two entries");
+
+            Assert(session.StepBack(), "StepBack must succeed");
+            Assert(session.ExecutionLog.Count == 1, "StepBack must remove the undone log entry");
+            Assert(session.ExecutionLog.GetLast(1)[0].Address == 0x8000,
+                "the remaining entry must be the first instruction");
+
+            session.Step();
+            Assert(session.ExecutionLog.Count == 2, "stepping again must log the instruction once");
+            ExecutionLogEntry[] entries = session.ExecutionLog.GetLast(2);
+            Assert(entries[0].Address == 0x8000, "first log entry must be 8000h");
+            Assert(entries[1].Address == 0x8002, "second log entry must be 8002h");
+
+            Console.WriteLine("  [PASS] step back rewinds the execution log");
         }
 
         private static void Test_Session_RunTo()
@@ -419,6 +479,25 @@ namespace MikroLab.Tests
             {
             }
             Console.WriteLine("  [PASS] memory watchpoint");
+        }
+
+        private static void Test_Machine_Restore_M()
+        {
+            var machine = new Machine(profile: CpuProfile.Extended);
+            machine.Cpu.State.H = 0x82;
+            machine.Cpu.State.L = 0x00;
+            machine.Cpu.State.M = 0x5A;
+
+            MachineSnapshot snapshot = machine.Capture();
+            Assert(snapshot.M == 0x5A, "snapshot must capture M");
+
+            machine.Cpu.State.M = 0x00;
+            machine.Restore(snapshot);
+
+            Assert(machine.Cpu.State.M == 0x5A, "Restore must write M back");
+            Assert(machine.Memory.ReadByte(0x8200) == 0x5A, "Restore must write M to the addressed cell");
+
+            Console.WriteLine("  [PASS] Machine.Restore restores M");
         }
     }
 }

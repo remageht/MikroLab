@@ -149,6 +149,8 @@ namespace MikroLab.Core.Machine
             bool halted = State == RunState.Halted ||
                 (Cpu is ExtendedCpu extended && extended.IsHalted);
 
+            Ppi.RefreshKeyboard();
+
             return new MachineSnapshot
             {
                 A = cpuState.A,
@@ -209,6 +211,7 @@ namespace MikroLab.Core.Machine
             Cpu.State.E = snapshot.E;
             Cpu.State.H = snapshot.H;
             Cpu.State.L = snapshot.L;
+            Cpu.State.M = snapshot.M;
             Cpu.State.F = snapshot.F;
             Cpu.State.PC = snapshot.PC;
             Cpu.State.SP = snapshot.SP;

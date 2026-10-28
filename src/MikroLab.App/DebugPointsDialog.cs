@@ -8,6 +8,11 @@ using MikroLab.Core.Memory;
 
 namespace MikroLab.App
 {
+    /// <summary>
+    /// Editor for instruction breakpoints and memory watchpoints. Line
+    /// breakpoints and manual address breakpoints are listed separately and
+    /// can be removed independently; "clear all" only affects breakpoints.
+    /// </summary>
     internal sealed class DebugPointsDialog : Form
     {
         private readonly MachineHost _host;
@@ -16,6 +21,34 @@ namespace MikroLab.App
         private readonly ListBox _watchList;
         private readonly TextBox _watchAddress;
         private readonly ComboBox _watchType;
+
+        private sealed class BreakItem
+        {
+            public ushort Address { get; }
+            public int Line { get; }
+            public bool IsLine => Line > 0;
+
+            public BreakItem(ushort address, int line)
+            {
+                Address = address;
+                Line = line;
+            }
+
+            public override string ToString()
+            {
+                if (IsLine && Address == 0)
+                {
+                    return "строка " + Line + "  ·  адрес не назначен";
+                }
+
+                string address = Address.ToString("X4", CultureInfo.InvariantCulture) + "h";
+                if (IsLine)
+                {
+                    return "строка " + Line + "  ·  " + address;
+                }
+                return address + "  ·  вручную";
+            }
+        }
 
         public DebugPointsDialog(MachineHost host)
         {
@@ -37,7 +70,7 @@ namespace MikroLab.App
             Controls.Add(title);
 
             // Breakpoints section.
-            Label breakTitle = AppTheme.Label("Точки останова по адресу", AppTheme.Text, AppTheme.SmallBoldFont);
+            Label breakTitle = AppTheme.Label("Точки останова (строки и адреса)", AppTheme.Text, AppTheme.SmallBoldFont);
             breakTitle.Location = new Point(18, 46);
             Controls.Add(breakTitle);
 
@@ -160,6 +193,17 @@ namespace MikroLab.App
             watchRemove.Click += (sender, args) => RemoveWatchpoint();
             Controls.Add(watchRemove);
 
+            var watchClear = new UiButton
+            {
+                Text = "Очистить наблюдения",
+                Kind = UiButtonKind.Ghost,
+                Width = 160,
+                Height = 28,
+                Location = new Point(18, 486)
+            };
+            watchClear.Click += (sender, args) => { _host.ClearWatchpoints(); RefreshLists(); };
+            Controls.Add(watchClear);
+
             var close = new UiButton
             {
                 Text = "Закрыть",
@@ -185,15 +229,17 @@ namespace MikroLab.App
 
         private void RemoveBreakpoint()
         {
-            if (_breakList.SelectedItem is string text)
+            if (!(_breakList.SelectedItem is BreakItem item)) return;
+
+            if (item.IsLine)
             {
-                string addr = text.Split(' ')[0].TrimEnd('h', 'H');
-                if (ushort.TryParse(addr, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort address))
-                {
-                    _host.RemoveAddressBreakpoint(address);
-                    RefreshLists();
-                }
+                _host.RemoveBreakpointLine(item.Line);
             }
+            else
+            {
+                _host.RemoveAddressBreakpoint(item.Address);
+            }
+            RefreshLists();
         }
 
         private void AddWatchpoint()
@@ -225,9 +271,18 @@ namespace MikroLab.App
         private void RefreshLists()
         {
             _breakList.Items.Clear();
-            foreach (ushort address in _host.AddressBreakpoints)
+
+            foreach (int line in _host.BreakpointLines)
             {
-                _breakList.Items.Add(address.ToString("X4") + "h");
+                _host.TryGetAddressForLine(line, out ushort address);
+                _breakList.Items.Add(new BreakItem(address, line));
+            }
+
+            foreach (ushort address in _host.ManualBreakpoints)
+            {
+                // A line breakpoint already covering this address stays visible
+                // on its own row; the manual flag is still removable on its own.
+                _breakList.Items.Add(new BreakItem(address, 0));
             }
 
             _watchList.Items.Clear();

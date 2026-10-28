@@ -111,43 +111,43 @@ namespace MikroLab.App
 
         private void ImportHex()
         {
-            using (var dialog = new OpenFileDialog())
+            string path = _files.OpenFile(new FileDialogRequest
             {
-                dialog.Title = "Импорт Intel HEX";
-                dialog.Filter = "Intel HEX (*.hex;*.ihx)|*.hex;*.ihx|Все файлы (*.*)|*.*";
-                dialog.CheckFileExists = true;
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Импорт Intel HEX",
+                Filter = "Intel HEX (*.hex;*.ihx)|*.hex;*.ihx|Все файлы (*.*)|*.*",
+                CheckFileExists = true
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.ImportHex(dialog.FileName);
-                    _studio.HostExternalProgramLoaded();
-                    PumpUi();
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось импортировать Intel HEX", ex);
-                }
+            try
+            {
+                _host.ImportHex(path);
+                _studio.HostExternalProgramLoaded();
+                PumpUi();
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось импортировать Intel HEX", ex);
             }
         }
 
         private void ExportHex()
         {
-            using (var dialog = new SaveFileDialog())
+            string path = _files.SaveFile(new FileDialogRequest
             {
-                dialog.Title = "Экспорт Intel HEX";
-                dialog.Filter = "Intel HEX (*.hex;*.ihx)|*.hex;*.ihx|Все файлы (*.*)|*.*";
-                dialog.FileName = "program.hex";
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Экспорт Intel HEX",
+                Filter = "Intel HEX (*.hex;*.ihx)|*.hex;*.ihx|Все файлы (*.*)|*.*",
+                DefaultFileName = "program.hex"
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.ExportHex(dialog.FileName);
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось экспортировать Intel HEX", ex);
-                }
+            try
+            {
+                _host.ExportHex(path);
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось экспортировать Intel HEX", ex);
             }
         }
 
@@ -155,43 +155,43 @@ namespace MikroLab.App
 
         private void ImportBinary()
         {
-            using (var dialog = new OpenFileDialog())
+            string path = _files.OpenFile(new FileDialogRequest
             {
-                dialog.Title = "Импорт бинарного образа";
-                dialog.Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*";
-                dialog.CheckFileExists = true;
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Импорт бинарного образа",
+                Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*",
+                CheckFileExists = true
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.ImportBinary(dialog.FileName);
-                    _studio.HostExternalProgramLoaded();
-                    PumpUi();
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось импортировать BIN", ex);
-                }
+            try
+            {
+                _host.ImportBinary(path);
+                _studio.HostExternalProgramLoaded();
+                PumpUi();
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось импортировать BIN", ex);
             }
         }
 
         private void ExportBinary()
         {
-            using (var dialog = new SaveFileDialog())
+            string path = _files.SaveFile(new FileDialogRequest
             {
-                dialog.Title = "Экспорт бинарного образа";
-                dialog.Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*";
-                dialog.FileName = "program.bin";
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Экспорт бинарного образа",
+                Filter = "Бинарный образ (*.bin)|*.bin|Все файлы (*.*)|*.*",
+                DefaultFileName = "program.bin"
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.ExportBinary(dialog.FileName);
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось экспортировать BIN", ex);
-                }
+            try
+            {
+                _host.ExportBinary(path);
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось экспортировать BIN", ex);
             }
         }
 
@@ -199,43 +199,43 @@ namespace MikroLab.App
 
         private void Import580()
         {
-            using (var dialog = new OpenFileDialog())
+            string path = _files.OpenFile(new FileDialogRequest
             {
-                dialog.Title = "Импорт снимка КР580 (.580)";
-                dialog.Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*";
-                dialog.CheckFileExists = true;
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Импорт снимка КР580 (.580)",
+                Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*",
+                CheckFileExists = true
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.Import580(dialog.FileName);
-                    _studio.HostExternalProgramLoaded();
-                    PumpUi();
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось импортировать .580", ex);
-                }
+            try
+            {
+                _host.Import580(path);
+                _studio.HostExternalProgramLoaded();
+                PumpUi();
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось импортировать .580", ex);
             }
         }
 
         private void Export580()
         {
-            using (var dialog = new SaveFileDialog())
+            string path = _files.SaveFile(new FileDialogRequest
             {
-                dialog.Title = "Экспорт снимка КР580 (.580)";
-                dialog.Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*";
-                dialog.FileName = "program.580";
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Экспорт снимка КР580 (.580)",
+                Filter = "Снимок КР580 (*.580)|*.580|Все файлы (*.*)|*.*",
+                DefaultFileName = "program.580"
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.Export580(dialog.FileName);
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось экспортировать .580", ex);
-                }
+            try
+            {
+                _host.Export580(path);
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось экспортировать .580", ex);
             }
         }
 
@@ -256,43 +256,43 @@ namespace MikroLab.App
 
         private void SaveState()
         {
-            using (var dialog = new SaveFileDialog())
+            string path = _files.SaveFile(new FileDialogRequest
             {
-                dialog.Title = "Сохранить состояние машины";
-                dialog.Filter = "Состояние MikroLab (*.json)|*.json|Все файлы (*.*)|*.*";
-                dialog.FileName = "mikrolab-state.json";
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Сохранить состояние машины",
+                Filter = "Состояние MikroLab (*.json)|*.json|Все файлы (*.*)|*.*",
+                DefaultFileName = "mikrolab-state.json"
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.SaveState(dialog.FileName);
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось сохранить состояние", ex);
-                }
+            try
+            {
+                _host.SaveState(path);
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось сохранить состояние", ex);
             }
         }
 
         private void LoadState()
         {
-            using (var dialog = new OpenFileDialog())
+            string path = _files.OpenFile(new FileDialogRequest
             {
-                dialog.Title = "Загрузить состояние машины";
-                dialog.Filter = "Состояние MikroLab (*.json)|*.json|Все файлы (*.*)|*.*";
-                dialog.CheckFileExists = true;
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                Title = "Загрузить состояние машины",
+                Filter = "Состояние MikroLab (*.json)|*.json|Все файлы (*.*)|*.*",
+                CheckFileExists = true
+            });
+            if (path == null) return;
 
-                try
-                {
-                    _host.LoadState(dialog.FileName);
-                    _studio.HostExternalProgramLoaded();
-                    PumpUi();
-                }
-                catch (Exception ex)
-                {
-                    ShowFileError("Не удалось загрузить состояние", ex);
-                }
+            try
+            {
+                _host.LoadState(path);
+                _studio.HostExternalProgramLoaded();
+                PumpUi();
+            }
+            catch (Exception ex)
+            {
+                ShowFileError("Не удалось загрузить состояние", ex);
             }
         }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using MikroLab.App.Controls;
@@ -17,17 +18,21 @@ namespace MikroLab.App.Workspaces
         private readonly UiButton _run;
         private readonly UiButton _pause;
         private readonly UiButton _reset;
+        private readonly UiButton _check;
+        private readonly Label _checkLabel;
 
         private readonly SevenSegmentDisplay _display;
         private readonly LedBar _lamps;
         private readonly ToggleSwitch[] _tumblers = new ToggleSwitch[3];
         private readonly VoltageSlider[] _sliders = new VoltageSlider[4];
+        private readonly MatrixKeyboardControl _keyboard;
         private readonly Label _portA;
         private readonly Label _portB;
         private readonly Label _adc;
         private readonly Label _regs;
         private readonly Label _flags;
         private bool _syncing;
+        private bool _wasHalted;
 
         public event Action<string> OpenInStudioRequested;
 
@@ -54,15 +59,16 @@ namespace MikroLab.App.Workspaces
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 5,
+                RowCount = 6,
                 BackColor = AppTheme.Surface,
                 Padding = new Padding(14, 12, 14, 12),
                 Margin = new Padding(0)
             };
             leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
+            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
             leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
             leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
 
             Label labsTitle = AppTheme.Label("ЛАБОРАТОРИИ", AppTheme.TextDim, AppTheme.SmallBoldFont);
@@ -122,11 +128,48 @@ namespace MikroLab.App.Workspaces
                 }
             };
 
+            var checkPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = AppTheme.Surface,
+                Margin = new Padding(0, 6, 0, 6),
+                Padding = new Padding(0)
+            };
+            checkPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            checkPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
+            checkPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            _checkLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                ForeColor = AppTheme.TextMuted,
+                Font = AppTheme.SmallFont,
+                TextAlign = ContentAlignment.MiddleLeft,
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, 0, 8, 0)
+            };
+            _check = new UiButton
+            {
+                Text = "Проверить",
+                Kind = UiButtonKind.Secondary,
+                Dock = DockStyle.Fill,
+                Height = 30,
+                Font = AppTheme.SmallFont,
+                Margin = new Padding(0)
+            };
+            _check.Click += (sender, args) => RunCheck(false);
+            checkPanel.Controls.Add(_checkLabel, 0, 0);
+            checkPanel.Controls.Add(_check, 1, 0);
+
             leftLayout.Controls.Add(labsTitle, 0, 0);
             leftLayout.Controls.Add(_labs, 0, 1);
             leftLayout.Controls.Add(_labTitle, 0, 2);
             leftLayout.Controls.Add(_description, 0, 3);
-            leftLayout.Controls.Add(open, 0, 4);
+            leftLayout.Controls.Add(checkPanel, 0, 4);
+            leftLayout.Controls.Add(open, 0, 5);
             left.Controls.Add(leftLayout);
 
             var right = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
@@ -155,7 +198,7 @@ namespace MikroLab.App.Workspaces
             _stateLabel.AutoSize = false;
             _stateLabel.TextAlign = ContentAlignment.MiddleRight;
             _stateLabel.Dock = DockStyle.Right;
-            _stateLabel.Width = 158;
+            _stateLabel.Width = 330;
 
             var runFlow = new FlowLayoutPanel
             {
@@ -198,7 +241,7 @@ namespace MikroLab.App.Workspaces
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 2,
-                RowCount = 4,
+                RowCount = 5,
                 BackColor = AppTheme.Surface,
                 Margin = new Padding(0),
                 Padding = new Padding(0)
@@ -208,6 +251,7 @@ namespace MikroLab.App.Workspaces
             boardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
             boardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
             boardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 232));
+            boardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 204));
             boardLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
 
             var indicatorsCard = MakeBoardCard("ИНДИКАТОРЫ · 8 РАЗРЯДОВ");
@@ -296,17 +340,27 @@ namespace MikroLab.App.Workspaces
             analogCard.Controls.Add(_adc);
             boardLayout.Controls.Add(analogCard, 1, 2);
 
+            var keyboardCard = MakeBoardCard("МАТРИЧНАЯ КЛАВИАТУРА · ПОРТ C (F8h)");
+            _keyboard = new MatrixKeyboardControl { Dock = DockStyle.Fill };
+            _keyboard.Attach(_host.Keyboard);
+            _keyboard.KeyChanged += (row, column, pressed) =>
+                _host.SetKeyState(row, column, pressed);
+            keyboardCard.Controls.Add(_keyboard);
+            boardLayout.Controls.Add(keyboardCard, 0, 3);
+            boardLayout.SetColumnSpan(keyboardCard, 2);
+
             var hintCard = MakeBoardCard("КАК ПОЛЬЗОВАТЬСЯ");
             Label hint = AppTheme.Label(
                 "Выберите лабораторную работу слева, откройте пример в студии, " +
                 "соберите его (F7) и запустите (F5). Устройства на этом стенде " +
-                "обновляются в реальном времени.",
+                "обновляются в реальном времени; после HLT результат проверяется " +
+                "автоматически.",
                 AppTheme.TextMuted,
                 AppTheme.SmallFont);
             hint.Dock = DockStyle.Fill;
             hint.AutoSize = false;
             hintCard.Controls.Add(hint);
-            boardLayout.Controls.Add(hintCard, 0, 3);
+            boardLayout.Controls.Add(hintCard, 0, 4);
             boardLayout.SetColumnSpan(hintCard, 2);
 
             board.Controls.Add(boardLayout);
@@ -386,6 +440,47 @@ namespace MikroLab.App.Workspaces
             _description.Text = lab.Summary + "\n\n" + lab.Description;
             _description.SelectionStart = 0;
             _description.SelectionLength = 0;
+            _wasHalted = _host.State == RunState.Halted;
+            UpdateCheckSummary(lab);
+        }
+
+        private void UpdateCheckSummary(LabDefinition lab)
+        {
+            if (lab == null || _checkLabel == null) return;
+
+            LabExpectation expectation = lab.Expectation;
+            if (expectation == null || expectation.IsEmpty)
+            {
+                _checkLabel.ForeColor = AppTheme.TextMuted;
+                _checkLabel.Text = "Эталон не задан · проверьте значения вручную";
+                return;
+            }
+
+            var parts = new List<string>();
+            if (expectation.A.HasValue) parts.Add("A=" + expectation.A.Value.ToString("X2") + "h");
+            if (expectation.DE.HasValue) parts.Add("DE=" + expectation.DE.Value.ToString("X4") + "h");
+            if (expectation.Memory.Count > 0)
+            {
+                parts.Add("память: " + expectation.Memory.Count + " ячеек");
+            }
+
+            _checkLabel.ForeColor = AppTheme.TextDim;
+            _checkLabel.Text = "Эталон · " + string.Join(" · ", parts);
+        }
+
+        private void RunCheck(bool automatic)
+        {
+            if (!(_labs.SelectedItem is LabDefinition lab)) return;
+
+            MachineSnapshot snapshot = _host.Snapshot();
+            if (snapshot == null) return;
+
+            LabCheckResult result = LabCheck.Evaluate(lab, snapshot);
+            _checkLabel.ForeColor = !result.IsDefined
+                ? AppTheme.TextMuted
+                : (result.Passed ? AppTheme.Green : AppTheme.Red);
+            _checkLabel.Text = (automatic ? "Автопроверка · " : "Проверка · ") +
+                               result.Summary + "\n" + string.Join("  ", result.Details);
         }
 
         public void UpdateFromSnapshot(MachineSnapshot snapshot)
@@ -421,11 +516,19 @@ namespace MikroLab.App.Workspaces
                 _flags.Text = "C=" + OnOff(snapshot.Flags.C) + "  Z=" + OnOff(snapshot.Flags.Z) +
                               "  S=" + OnOff(snapshot.Flags.S) + "  P=" + OnOff(snapshot.Flags.P) +
                               "  AC=" + OnOff(snapshot.Flags.AC);
+                _keyboard?.SyncFromModel();
             }
             finally
             {
                 _syncing = false;
             }
+
+            bool halted = snapshot.Halted || _host.State == RunState.Halted;
+            if (halted && !_wasHalted)
+            {
+                RunCheck(true);
+            }
+            _wasHalted = halted;
 
             UpdateButtons();
         }
@@ -462,6 +565,8 @@ namespace MikroLab.App.Workspaces
             else if (_host.State == RunState.Paused)
             {
                 text = "● ПАУЗА";
+                string reason = _host.StopReason;
+                if (!string.IsNullOrEmpty(reason)) text += " · " + reason;
                 color = AppTheme.Amber;
             }
             else

@@ -20,6 +20,10 @@ namespace MikroLab.Tests
             failures += Run("SessionRegressionTests", SessionRegressionTests.RunAll);
             failures += Run("DebuggerTests", DebuggerTests.RunAll);
             failures += Run("StudioIntegrationTests", StudioIntegrationTests.RunAll);
+            failures += Run("KeyboardTests", KeyboardTests.RunAll);
+            failures += Run("LabTests", LabTests.RunAll);
+            failures += Run("RotationTests", RotationTests.RunAll);
+            failures += Run("BreakpointTests", BreakpointTests.RunAll);
 
             Console.WriteLine("=================================================");
             if (failures == 0)

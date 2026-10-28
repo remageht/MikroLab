@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using MikroLab.Core.Assembler;
 using MikroLab.Core.Cpu;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Formats;
 using MikroLab.Core.Machine;
 using MikroLab.Core.Memory;
@@ -114,21 +115,54 @@ namespace MikroLab.Cli
             int maxSteps = GetIntOption(args, "--steps", 1000000);
             ulong maxCycles = GetULongOption(args, "--max-cycles", 0);
             bool trace = HasFlag(args, "--trace");
+            ushort? runTo = GetAddressOption(args, "--run-to");
+            string logPath = GetOption(args, "--log");
+            ExecutionLog executionLog = string.IsNullOrEmpty(logPath)
+                ? null
+                : new ExecutionLog(Math.Max(1, Math.Min(maxSteps, 1000000)));
+
             bool halted = false;
+            bool reachedTarget = !runTo.HasValue;
             int executed = 0;
             program.Machine.State = RunState.Running;
 
             while (executed < maxSteps)
             {
                 ushort pc = program.Machine.Cpu.State.PC;
+                if (runTo.HasValue && pc == runTo.Value)
+                {
+                    reachedTarget = true;
+                    break;
+                }
+
                 byte opcode = program.Machine.Memory.ReadByte(pc);
+                DisassembledInstruction decoded = executionLog != null
+                    ? I8080Disassembler.Decode(program.Machine.Memory, pc)
+                    : default;
                 if (trace)
                 {
                     Console.WriteLine(pc.ToString("X4") + "h  " + opcode.ToString("X2") + "h");
                 }
 
+                ulong cyclesBefore = program.Machine.Cpu.State.Cycles;
                 bool ok = program.Machine.Step();
                 executed++;
+
+                if (executionLog != null)
+                {
+                    executionLog.Append(
+                        pc,
+                        decoded,
+                        program.Machine.Cpu.State,
+                        program.Machine.Cpu.State.Cycles - cyclesBefore);
+                }
+
+                if (runTo.HasValue && ok && program.Machine.Cpu.State.PC == runTo.Value)
+                {
+                    reachedTarget = true;
+                    break;
+                }
+
                 if (!ok)
                 {
                     halted = true;
@@ -149,6 +183,22 @@ namespace MikroLab.Cli
             if (HasFlag(args, "--dump"))
             {
                 PrintDump(program.Machine.Memory.Capture(), DefaultOrigin, 64);
+            }
+
+            if (executionLog != null)
+            {
+                ExecutionLogFormat format = string.Equals(
+                    Path.GetExtension(logPath), ".md", StringComparison.OrdinalIgnoreCase)
+                    ? ExecutionLogFormat.Markdown
+                    : ExecutionLogFormat.Csv;
+                executionLog.Save(logPath, format);
+                Console.WriteLine("wrote " + logPath + " (" + executionLog.Count + " entries)");
+            }
+
+            if (runTo.HasValue && !reachedTarget)
+            {
+                Console.Error.WriteLine("run-to " + runTo.Value.ToString("X4") + "h was not reached");
+                return 1;
             }
             return 0;
         }
@@ -506,7 +556,7 @@ namespace MikroLab.Cli
             Console.WriteLine();
             Console.WriteLine("usage:");
             Console.WriteLine("  MikroLab.Cli assemble <source.asm> [-o <out.hex>] [--listing]");
-            Console.WriteLine("  MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--trace] [--dump]");
+            Console.WriteLine("  MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--run-to XXXX] [--log <file.csv|file.md>] [--trace] [--dump]");
             Console.WriteLine("  MikroLab.Cli step <source|file.bin|file.580> [--count N]");
             Console.WriteLine("  MikroLab.Cli dump <source|file.bin|file.580> [--start XXXX] [--length N]");
             Console.WriteLine("  MikroLab.Cli hex <file.hex|file.bin> -o <output> [--start XXXX] [--start-record]");
@@ -557,6 +607,12 @@ namespace MikroLab.Cli
                     return true;
             }
             return false;
+        }
+
+        private static ushort? GetAddressOption(string[] args, string name)
+        {
+            string text = GetOption(args, name);
+            return text == null ? (ushort?)null : ParseAddress(text);
         }
 
         private static int GetIntOption(string[] args, string name, int fallback)

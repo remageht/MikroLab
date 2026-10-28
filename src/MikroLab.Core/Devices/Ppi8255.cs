@@ -47,6 +47,12 @@ namespace MikroLab.Core.Devices
         /// <summary>External pins of port C.</summary>
         public byte InputC { get; set; }
 
+        /// <summary>
+        /// Optional matrix keyboard. When upper port C is an input, PC4..PC7
+        /// are read from the keyboard columns selected by PC0..PC3.
+        /// </summary>
+        public IKeyboardMatrix Keyboard { get; set; }
+
         public PpiMode GroupAMode { get; private set; }
         public PpiMode GroupBMode { get; private set; }
 
@@ -204,13 +210,36 @@ namespace MikroLab.Core.Devices
         {
             var clone = new Ppi8255();
             clone.RestoreState(PortA, PortB, PortC, ControlWord, InputA, InputB, InputC);
+            clone.Keyboard = Keyboard;
             return clone;
+        }
+
+        /// <summary>
+        /// Recomputes the keyboard half of <see cref="InputC"/> from the
+        /// currently selected row lines. Hosts call this after a key event so
+        /// captured snapshots show the same value the CPU would read.
+        /// </summary>
+        public void RefreshKeyboard()
+        {
+            if (Keyboard == null) return;
+            if (!PortCUpperInput) return;
+
+            byte rows = (byte)((PortCLowerInput ? InputC : PortC) & 0x0F);
+            InputC = (byte)((InputC & 0x0F) | (Keyboard.ReadColumns(rows) & 0xF0));
         }
 
         private byte ReadPortC()
         {
             byte value = 0;
-            value |= PortCUpperInput ? (byte)(InputC & 0xF0) : (byte)(PortC & 0xF0);
+            if (PortCUpperInput && Keyboard != null)
+            {
+                byte rows = (byte)((PortCLowerInput ? InputC : PortC) & 0x0F);
+                value |= (byte)(Keyboard.ReadColumns(rows) & 0xF0);
+            }
+            else
+            {
+                value |= PortCUpperInput ? (byte)(InputC & 0xF0) : (byte)(PortC & 0xF0);
+            }
             value |= PortCLowerInput ? (byte)(InputC & 0x0F) : (byte)(PortC & 0x0F);
             return value;
         }

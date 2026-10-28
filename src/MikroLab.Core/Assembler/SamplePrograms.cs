@@ -32,9 +32,13 @@ namespace MikroLab.Core.Assembler
             new SampleProgram("Сумма 1…5", SumOneToFive),
             new SampleProgram("Переключатели → лампы", TumblersToLamps),
             new SampleProgram("Регистры (лаб. 1)", RegisterLab),
+            new SampleProgram("Индикатор: 1234", Display1234),
+            new SampleProgram("Счётчик 0…F", DisplayCounter),
             new SampleProgram("Логические операции", LogicLab),
             new SampleProgram("Циклы", LoopsLab),
             new SampleProgram("Порты ВВ55", PortsLab),
+            new SampleProgram("Аналоговый датчик", AnalogSensor),
+            new SampleProgram("Матричная клавиатура", MatrixKeyboard),
             new SampleProgram("УМК · огни с 0800h", UmkRunningLight)
         };
 
@@ -158,6 +162,129 @@ LOOP:   IN 0FAh           ; SA1..SA3 → A
         STA 8201h         ; сохранить A
         MOV A, M          ; A ← 8000h
         STA 8202h
+        HLT
+
+        END
+";
+
+        public const string Display1234 =
+@"; MikroLab Studio · индикаторы
+; 83F4h..83F7h — входные полубайты для монитора SEGGG (0100h).
+; Каждый байт содержит две цифры: старшая → левее.
+
+        ORG 8000h
+
+        MVI A, 12h
+        STA 83F4h
+        MVI A, 34h
+        STA 83F5h
+        MVI A, 00h
+        STA 83F6h
+        STA 83F7h
+
+        CALL 0100h        ; преобразовать цифры в сегменты
+        HLT
+
+        END
+";
+
+        public const string DisplayCounter =
+@"; MikroLab Studio · счётчик на индикаторах
+; Младшая пара цифр показывает 00, 01, … 0F и снова 00.
+
+        ORG 8000h
+
+        MVI B, 00h
+
+LOOP:   MOV A, B
+        STA 83F4h
+        CALL 0100h
+        INR B
+        MOV A, B
+        CPI 10h
+        JNZ LOOP
+
+        MVI B, 00h
+        JMP LOOP
+
+        END
+";
+
+        public const string AnalogSensor =
+@"; MikroLab Studio · аналоговый датчик
+; Канал 2 АЦП → аккумулятор → лампы порта B (F9h).
+; Значение датчика меняется на вкладке «Устройства».
+
+        ORG 8000h
+
+        MVI A, 90h        ; PA — вход, PB/PC — выход
+        OUT 0FBh          ; управляющее слово ВВ55
+        MVI A, 02h
+        OUT 0FDh          ; выбрать канал 2
+
+LOOP:   IN 0FEh          ; прочитать АЦП
+        OUT 0F9h          ; показать на лампах порта B
+        JMP LOOP
+
+        END
+";
+
+        public const string MatrixKeyboard =
+@"; MikroLab Studio · матричная клавиатура 4×4
+; PC0..PC3 — строки (выходы, активный ноль),
+; PC4..PC7 — столбцы (входы, активный ноль).
+; Код нажатой клавиши 1…16 выводится в 8200h и на лампы.
+
+        ORG 8000h
+
+        MVI A, 98h        ; PA — вход, PB — выход, PC: старший вход / младший выход
+        OUT 0FBh
+
+SCAN:   MVI B, 00h        ; код строки: 0, 4, 8, 12
+        MVI C, 0FEh       ; активная строка 0
+
+ROW:    MOV A, C
+        OUT 0F8h          ; выбрать строку
+        IN 0F8h           ; прочитать столбцы
+        MOV E, A
+        ANI 0F0h
+        CPI 0F0h
+        JNZ FOUND         ; есть нажатая клавиша
+
+        INR B
+        INR B
+        INR B
+        INR B
+        MOV A, C
+        RLC               ; следующая строка
+        MOV C, A
+        MOV A, B
+        CPI 10h
+        JNZ ROW
+        JMP SCAN
+
+FOUND:  MOV A, E
+        RRC
+        RRC
+        RRC
+        RRC               ; столбцы в младшем полубайте
+        MOV E, A
+        MVI D, 01h
+
+COL:    MOV A, E
+        RRC
+        MOV E, A
+        JNC KEY           ; ноль = нажатый столбец
+        INR D
+        MOV A, D
+        CPI 05h
+        JZ SCAN
+        JMP COL
+
+KEY:    MOV A, B
+        ADD D
+        STA 8200h
+        OUT 0F9h
         HLT
 
         END

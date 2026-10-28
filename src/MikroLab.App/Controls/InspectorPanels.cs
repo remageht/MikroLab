@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Windows.Forms;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Machine;
 
 namespace MikroLab.App.Controls
@@ -12,6 +13,7 @@ namespace MikroLab.App.Controls
     {
         private readonly List<RegisterHit> _hits = new List<RegisterHit>();
         private readonly List<FlagHit> _flagHits = new List<FlagHit>();
+        private readonly RotationView _rotation;
         private MachineSnapshot _snapshot;
 
         public event Action<string, ushort> RegisterEdited;
@@ -31,10 +33,24 @@ namespace MikroLab.App.Controls
             Font = AppTheme.MonoSmall;
             Padding = new Padding(12);
             Cursor = Cursors.Default;
+
+            _rotation = new RotationView
+            {
+                Dock = DockStyle.Bottom,
+                Height = 88,
+                BackColor = AppTheme.Surface
+            };
+            Controls.Add(_rotation);
         }
 
-        public void UpdateSnapshot(MachineSnapshot snapshot)
+        public void UpdateSnapshot(MachineSnapshot snapshot, ExecutionLogEntry lastEntry = null)
         {
+            MachineSnapshot previous = _snapshot;
+            if (previous != null && lastEntry != null && snapshot != null)
+            {
+                _rotation.Observe(previous, snapshot, lastEntry.Instruction);
+            }
+
             _snapshot = snapshot;
             Invalidate();
         }

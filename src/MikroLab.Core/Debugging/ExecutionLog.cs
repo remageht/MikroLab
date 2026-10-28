@@ -235,6 +235,26 @@ namespace MikroLab.Core.Debugging
             return GetLast(int.MaxValue);
         }
 
+        /// <summary>
+        /// Removes the newest entry. Used by step-back so the journal stays in
+        /// sync with the machine instead of showing instructions from a future
+        /// that no longer happened.
+        /// </summary>
+        public bool RemoveLast()
+        {
+            lock (_sync)
+            {
+                if (_count == 0) return false;
+                int index = (_start + _count - 1) % _items.Length;
+                _items[index] = null;
+                _count--;
+                if (_count == 0) _start = 0;
+                if (_step > 0) _step--;
+                _revision++;
+                return true;
+            }
+        }
+
         public void Clear()
         {
             lock (_sync)
