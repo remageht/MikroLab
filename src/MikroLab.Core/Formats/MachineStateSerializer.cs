@@ -7,6 +7,21 @@ using MikroLab.Core.Machine;
 
 namespace MikroLab.Core.Formats
 {
+    /// <summary>
+    /// Source-generated metadata keeps machine-state JSON working in trimmed
+    /// self-contained builds, where reflection-based serialization is disabled.
+    /// </summary>
+    [JsonSourceGenerationOptions(
+        WriteIndented = true,
+        IncludeFields = true,
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+        UseStringEnumConverter = true)]
+    [JsonSerializable(typeof(MachineStateFile))]
+    internal sealed partial class MachineStateJsonContext : JsonSerializerContext
+    {
+    }
+
     /// <summary>Root object of a saved MikroLab machine-state file.</summary>
     public sealed class MachineStateFile
     {
@@ -28,8 +43,6 @@ namespace MikroLab.Core.Formats
         public const string FormatName = "MikroLab.MachineState";
         public const int CurrentVersion = 1;
 
-        private static readonly JsonSerializerOptions Options = CreateOptions();
-
         public static string Serialize(MachineSnapshot snapshot, bool programLoaded = false,
             ushort entryPoint = 0x8000)
         {
@@ -44,7 +57,7 @@ namespace MikroLab.Core.Formats
                 EntryPoint = entryPoint,
                 Snapshot = snapshot
             };
-            return JsonSerializer.Serialize(file, Options);
+            return JsonSerializer.Serialize(file, MachineStateJsonContext.Default.MachineStateFile);
         }
 
         public static MachineStateFile Deserialize(string json)
@@ -55,7 +68,7 @@ namespace MikroLab.Core.Formats
             MachineStateFile file;
             try
             {
-                file = JsonSerializer.Deserialize<MachineStateFile>(json, Options);
+                file = JsonSerializer.Deserialize(json, MachineStateJsonContext.Default.MachineStateFile);
             }
             catch (JsonException ex)
             {
@@ -95,19 +108,6 @@ namespace MikroLab.Core.Formats
                 throw new InvalidDataException("Machine state has a negative call stack depth.");
             if (file.Snapshot.CallStack != null && file.Snapshot.CallStack.Length > 0x10000)
                 throw new InvalidDataException("Machine state call stack is too deep.");
-        }
-
-        private static JsonSerializerOptions CreateOptions()
-        {
-            var options = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                IncludeFields = true,
-                PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            };
-            options.Converters.Add(new JsonStringEnumConverter());
-            return options;
         }
     }
 }

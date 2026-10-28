@@ -84,7 +84,7 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 
 ## Релизы
 
-Текущая версия — **1.1.0**. Теги и готовые сборки публикуются на странице
+Текущая версия — **1.1.1**. Теги и готовые сборки публикуются на странице
 [GitHub Releases](https://github.com/remageht/MikroLab/releases), история
 изменений — в [CHANGELOG.md](CHANGELOG.md).
 
@@ -93,8 +93,19 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 - `MikroLab-Studio-<версия>-win-x64.zip` — Windows-студия (WinForms,
   self-contained, .NET устанавливать не нужно);
 - `MikroLab-CLI-<версия>-{win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64}.zip`
-  — кроссплатформенный CLI с ядром и тестами;
+  — кроссплатформенный CLI с ядром и тестами (trimmed self-contained);
 - исходные архивы GitHub и тег для сборки Core/CLI на любой платформе.
+
+### Портативность
+
+Студия не требует установки, не пишет в реестр и не создаёт файлов настроек.
+Распакуйте архив в любую папку и запустите `MikroLab.exe`. Если приложение
+аварийно завершится, `crash.log` появится рядом с `MikroLab.exe`; когда папка
+доступна только для чтения (например, `Program Files`), лог пишется в
+`%LOCALAPPDATA%\MikroLab\crash.log`.
+
+Релизные сборки не обфусцированы: из них удалены только отладочные символы
+(`.pdb`), а исходный код доступен на условиях GPLv3.
 
 WinForms-оболочка пока остаётся Windows-временной; презентационный слой
 `MikroLab.Presentation` уже отделён от WinForms, а `MikroLab.Core`,

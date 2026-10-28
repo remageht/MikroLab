@@ -61,13 +61,18 @@ namespace MikroLab.App
 
             try
             {
-                string folder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "MikroLab");
-                Directory.CreateDirectory(folder);
-                File.AppendAllText(
-                    Path.Combine(folder, "crash.log"),
-                    DateTime.Now.ToString("u") + Environment.NewLine + exception + Environment.NewLine + Environment.NewLine);
+                string text = DateTime.Now.ToString("u") + Environment.NewLine + exception + Environment.NewLine + Environment.NewLine;
+
+                // Portable builds keep the log beside the executable. If that folder is
+                // read-only (for example Program Files), fall back to the user profile.
+                if (!TryAppendCrashLog(Path.Combine(AppContext.BaseDirectory, "crash.log"), text))
+                {
+                    string folder = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "MikroLab");
+                    Directory.CreateDirectory(folder);
+                    File.AppendAllText(Path.Combine(folder, "crash.log"), text);
+                }
             }
             catch
             {
@@ -79,6 +84,19 @@ namespace MikroLab.App
                 "MikroLab — непредвиденная ошибка",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
+        }
+
+        private static bool TryAppendCrashLog(string path, string text)
+        {
+            try
+            {
+                File.AppendAllText(path, text);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

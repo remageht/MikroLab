@@ -9,6 +9,9 @@
     <AssemblyName>MikroLab.Cli</AssemblyName>
     <LangVersion>latest</LangVersion>
     <NuGetAudit>false</NuGetAudit>
+    <!-- The CLI is trim-safe: JSON uses a source-generated serializer context. -->
+    <PublishTrimmed Condition="'$(RuntimeIdentifier)' != ''">true</PublishTrimmed>
+    <TrimMode Condition="'$(RuntimeIdentifier)' != ''">full</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>

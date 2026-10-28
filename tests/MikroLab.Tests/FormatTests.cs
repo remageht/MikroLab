@@ -17,6 +17,7 @@ namespace MikroLab.Tests
             Test_IntelHex_RejectsMalformedInput();
             Test_MachineState_RoundTrip_CallStack();
             Test_MachineState_RoundTrip_Halted();
+            Test_MachineState_JsonContract();
             Test_MachineState_RejectsMalformedInput();
             Test_Kr580_LayoutAndRoundTrip();
             Test_Kr580_RejectsMalformedInput();
@@ -154,6 +155,29 @@ namespace MikroLab.Tests
             restored.Cpu.State.PC = 0x8000;
             Assert(restored.Cpu.Step(), "Reset must clear the restored HLT latch");
             Console.WriteLine("  [PASS] Machine state round trip preserves HLT");
+        }
+
+        private static void Test_MachineState_JsonContract()
+        {
+            var machine = new Machine(profile: CpuProfile.Extended);
+            machine.Memory.WriteByte(0x8000, 0x76); // HLT
+            machine.Cpu.State.PC = 0x8000;
+            machine.Step();
+
+            string json = MachineStateSerializer.Serialize(machine.Capture(), true, 0x8000);
+            Assert(json.Contains("\"format\": \"MikroLab.MachineState\""),
+                "State JSON must keep the camelCase format field");
+            Assert(json.Contains("\"snapshot\": {"), "State JSON must keep the camelCase snapshot field");
+            Assert(json.Contains("\"state\": \"Halted\""), "State JSON must keep string enum values");
+            Assert(json.Contains("\"memory\": \""), "State JSON must keep base64 memory");
+
+            // Older files may use different key casing; reading must stay case-insensitive.
+            string reordered = json
+                .Replace("\"format\"", "\"Format\"")
+                .Replace("\"snapshot\"", "\"Snapshot\"");
+            MachineStateFile file = MachineStateSerializer.Deserialize(reordered);
+            Assert(file.Snapshot.Halted, "Case-insensitive state loading must preserve HLT");
+            Console.WriteLine("  [PASS] Machine state JSON contract stays trim-safe and camelCase");
         }
 
         private static void Test_MachineState_RejectsMalformedInput()

@@ -13,6 +13,8 @@
     <LangVersion>latest</LangVersion>
     <NuGetAudit>false</NuGetAudit>
     <NoWarn>$(NoWarn);CA1416;WFO1000</NoWarn>
+    <!-- WinForms is not trim-compatible; a trimmed studio can fail at runtime. -->
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>
