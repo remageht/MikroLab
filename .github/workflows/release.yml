@@ -19,58 +19,6 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
-  cli:
-    name: CLI / ${{ matrix.rid }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        rid: [win-x64, linux-x64, linux-arm64, osx-x64, osx-arm64]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
-          fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Resolve tag and version
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
-          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
-
-      - name: Publish CLI
-        shell: bash
-        run: |
-          dotnet publish src/MikroLab.Cli/MikroLab.Cli.csproj \
-            -c Release \
-            -r "${{ matrix.rid }}" \
-            --self-contained true \
-            --source https://api.nuget.org/v3/index.json \
-            -p:PublishSingleFile=true \
-            -p:IncludeNativeLibrariesForSelfExtract=true \
-            -p:PublishTrimmed=true \
-            -p:DebugType=None \
-            -p:DebugSymbols=false \
-            -p:Version="$VERSION" \
-            -o "publish/cli-${{ matrix.rid }}"
-          cp README.md LICENSE THIRD-PARTY-NOTICES.md "publish/cli-${{ matrix.rid }}/"
-          cd publish
-          zip -r "MikroLab-CLI-${VERSION}-${{ matrix.rid }}.zip" "cli-${{ matrix.rid }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cli-${{ matrix.rid }}
-          path: publish/MikroLab-CLI-*.zip
-          if-no-files-found: error
-
   studio:
     name: Windows studio
     runs-on: windows-latest
@@ -101,25 +49,23 @@ jobs:
             --source https://api.nuget.org/v3/index.json `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -p:Version="$env:VERSION" `
             -o publish/studio-win-x64
-          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md publish/studio-win-x64/
-          Compress-Archive `
-            -Path publish/studio-win-x64 `
-            -DestinationPath "publish/MikroLab-Studio-$env:VERSION-win-x64.zip"
+          Get-Item publish/studio-win-x64/MikroLab.exe | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
           name: studio-win-x64
-          path: publish/MikroLab-Studio-*.zip
+          path: publish/studio-win-x64/MikroLab.exe
           if-no-files-found: error
 
   release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
-    needs: [cli, studio]
+    needs: [studio]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -141,5 +87,5 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           gh release view "$TAG" >/dev/null 2>&1 ||
-            gh release create "$TAG" --title "$TAG" --notes "MikroLab $TAG"
-          gh release upload "$TAG" release-assets/*.zip --clobber
+            gh release create "$TAG" --title "$TAG" --notes "MikroLab $TAG — Windows studio. Download MikroLab.exe. Source and license: https://github.com/remageht/MikroLab/tree/$TAG"
+          gh release upload "$TAG" release-assets/MikroLab.exe --clobber

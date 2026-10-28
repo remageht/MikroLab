@@ -84,22 +84,23 @@ dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 
 ## Релизы
 
-Текущая версия — **1.1.1**. Теги и готовые сборки публикуются на странице
+Текущая версия — **1.1.2**. Теги и готовые сборки публикуются на странице
 [GitHub Releases](https://github.com/remageht/MikroLab/releases), история
 изменений — в [CHANGELOG.md](CHANGELOG.md).
 
-В каждый релиз входят:
+В релиз входит один файл:
 
-- `MikroLab-Studio-<версия>-win-x64.zip` — Windows-студия (WinForms,
-  self-contained, .NET устанавливать не нужно);
-- `MikroLab-CLI-<версия>-{win-x64,linux-x64,linux-arm64,osx-x64,osx-arm64}.zip`
-  — кроссплатформенный CLI с ядром и тестами (trimmed self-contained);
-- исходные архивы GitHub и тег для сборки Core/CLI на любой платформе.
+- `MikroLab.exe` — Windows-студия (WinForms, self-contained, .NET устанавливать
+  не нужно, сжатый single-file образ ~47 МБ);
+- исходный код и лицензия доступны в репозитории и в архиве тега.
+
+CLI в релиз не входит: `MikroLab.Cli` остаётся инструментом разработки и
+проверки ядра.
 
 ### Портативность
 
 Студия не требует установки, не пишет в реестр и не создаёт файлов настроек.
-Распакуйте архив в любую папку и запустите `MikroLab.exe`. Если приложение
+Скопируйте `MikroLab.exe` в любую папку и запустите. Если приложение
 аварийно завершится, `crash.log` появится рядом с `MikroLab.exe`; когда папка
 доступна только для чтения (например, `Program Files`), лог пишется в
 `%LOCALAPPDATA%\MikroLab\crash.log`.
@@ -113,10 +114,10 @@ WinForms-оболочка пока остаётся Windows-временной; 
 Перенос интерфейса на Avalonia запланирован после наполнения этого слоя
 моделями представления.
 
-### CLI на Windows, Linux и macOS
+### CLI для разработки
 
 `MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Cli` и тесты не зависят от
-WinForms и собираются кроссплатформенно:
+WinForms и собираются кроссплатформенно. CLI не публикуется в релизах:
 
 ```bash
 dotnet build src/MikroLab.Core/MikroLab.Core.csproj
@@ -249,6 +250,7 @@ BIN нет метаданных, `PC` указывает на начало за�
 
 ## CLI
 
+CLI не входит в релизы и предназначен для разработки, тестов и автоматизации.
 Консольный инструмент `MikroLab.Cli` работает там же, где и .NET: на Windows,
 Linux и macOS. Полная справка — `MikroLab.Cli --help`.
 
