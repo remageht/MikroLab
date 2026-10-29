@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MikroLab.Cli", "src\MikroLa
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MikroLab.Presentation", "src\MikroLab.Presentation\MikroLab.Presentation.csproj", "{8BA3CB5F-0A5E-46A5-A525-99EF2E9734A1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MikroLab.Avalonia", "src\MikroLab.Avalonia\MikroLab.Avalonia.csproj", "{A286661E-B397-4530-A330-895F3E99A709}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -87,6 +89,18 @@ Global
 		{8BA3CB5F-0A5E-46A5-A525-99EF2E9734A1}.Release|x64.Build.0 = Release|Any CPU
 		{8BA3CB5F-0A5E-46A5-A525-99EF2E9734A1}.Release|x86.ActiveCfg = Release|Any CPU
 		{8BA3CB5F-0A5E-46A5-A525-99EF2E9734A1}.Release|x86.Build.0 = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|x64.Build.0 = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Debug|x86.Build.0 = Debug|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|x64.ActiveCfg = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|x64.Build.0 = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|x86.ActiveCfg = Release|Any CPU
+		{A286661E-B397-4530-A330-895F3E99A709}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -97,5 +111,6 @@ Global
 		{C8B768BD-3D26-41CC-828F-74BA675D33DB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{47FE8BB0-09D1-4AD0-A0D9-7A2BC4E35320} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{8BA3CB5F-0A5E-46A5-A525-99EF2E9734A1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{A286661E-B397-4530-A330-895F3E99A709} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

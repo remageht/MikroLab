@@ -31,7 +31,7 @@ jobs:
         run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
 
   cross-platform:
-    name: ${{ matrix.os }} (Core + CLI + tests)
+    name: ${{ matrix.os }} (Core + Presentation + Avalonia + CLI + tests)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -46,6 +46,8 @@ jobs:
         run: dotnet build src/MikroLab.Core/MikroLab.Core.csproj -c Release -v minimal
       - name: Build Presentation
         run: dotnet build src/MikroLab.Presentation/MikroLab.Presentation.csproj -c Release -v minimal
+      - name: Build Avalonia studio
+        run: dotnet build src/MikroLab.Avalonia/MikroLab.Avalonia.csproj -c Release -v minimal
       - name: Build CLI
         run: dotnet build src/MikroLab.Cli/MikroLab.Cli.csproj -c Release -v minimal
       - name: Build tests
@@ -54,3 +56,12 @@ jobs:
         run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
       - name: CLI smoke check
         run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
+      - name: Screenshot smoke check (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          xvfb-run -a -s "-screen 0 1600x1000x24" \
+            dotnet run --project src/MikroLab.Avalonia/MikroLab.Avalonia.csproj -c Release --no-build -- \
+            --capture "$RUNNER_TEMP/mikrolab-screens" --sample 0 --workspace studio
+          ls -la "$RUNNER_TEMP/mikrolab-screens"

@@ -1,9 +1,10 @@
 # MikroLab
 
-**MikroLab** — учебный эмулятор КР580ВМ80А (Intel 8080) для Windows с современным
-интерфейсом и двумя рабочими областями: полноценной студией разработчика и
-наглядным лабораторным стендом. В комплекте идёт кроссплатформенный консольный
-инструмент для сборки, запуска и конвертации программ без графической оболочки.
+**MikroLab** — учебный эмулятор КР580ВМ80А (Intel 8080) для Windows, Linux и macOS
+с современным интерфейсом и двумя рабочими областями: полноценной студией
+разработчика и наглядным лабораторным стендом. В репозитории есть
+кроссплатформенный консольный инструмент для сборки, запуска и конвертации
+программ без графической оболочки.
 
 Проект написан как самостоятельное приложение с собственной историей и не является
 форком. Часть ядра и модели устройств восходит к открытому GPLv3-проекту
@@ -57,71 +58,115 @@
 ### Общее
 
 - тёмная тема, высокое DPI, аккуратные настраиваемые элементы управления;
-- никаких NuGet-пакетов: только .NET и WinForms;
+- интерфейс студии в двух оболочках: WinForms на Windows и Avalonia 12 на
+  Linux/macOS; обе используют общий слой `MikroLab.Presentation`;
+- из NuGet-пакетов используются только `Avalonia`, `Avalonia.Desktop` и
+  `Avalonia.Themes.Fluent`; WinForms-сборка обходится стандартным .NET;
 - ядро полностью отделено от интерфейса и покрыто тестами;
-- кроссплатформенные ядро, презентационный слой, CLI и тесты; WinForms-интерфейс
-  работает в Windows;
+- кроссплатформенные ядро, презентационный слой, студия, CLI и тесты;
 - CI-матрица проверяет сборку на Windows, Linux и macOS;
 - встроенный режим снятия скриншотов для документации и регрессий.
 
 ## Быстрый старт
 
-Для Windows-приложения требуются Windows 10/11 и .NET SDK **10.0.400** или новее —
-версия зафиксирована в `global.json`.
+Для сборки требуются .NET SDK **10.0.400** или новее (версия зафиксирована в
+`global.json`) и Windows 10/11, Linux или macOS 12+.
+
+Windows — полное решение и WinForms-студия:
 
 ```powershell
-# сборка всего решения
 dotnet build MikroLab.sln
-
-# запуск приложения
 dotnet run --project src\MikroLab.App\MikroLab.App.csproj
-
-# тесты
-dotnet run --project tests\MikroLab.Tests\MikroLab.Tests.csproj
 ```
 
-Либо откройте `MikroLab.sln` в Visual Studio и запустите проект `MikroLab.App`.
+Linux и macOS — кроссплатформенная студия на Avalonia:
+
+```bash
+dotnet build src/MikroLab.Avalonia/MikroLab.Avalonia.csproj
+dotnet run --project src/MikroLab.Avalonia/MikroLab.Avalonia.csproj
+```
+
+Тесты одинаковы на всех платформах:
+
+```bash
+dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj
+```
+
+На Windows можно открыть `MikroLab.sln` в Visual Studio и запустить
+`MikroLab.App`; на Linux/macOS собирайте проект `MikroLab.Avalonia` отдельно —
+WinForms-проект в решение входит, но на этих платформах не собирается.
 
 ## Релизы
 
-Текущая версия — **1.1.2**. Теги и готовые сборки публикуются на странице
+Текущая версия — **1.2.0**. Теги и готовые сборки публикуются на странице
 [GitHub Releases](https://github.com/remageht/MikroLab/releases), история
 изменений — в [CHANGELOG.md](CHANGELOG.md).
 
-В релиз входит один файл:
+В релиз входят студии для трёх платформ:
 
 - `MikroLab.exe` — Windows-студия (WinForms, self-contained, .NET устанавливать
   не нужно, сжатый single-file образ ~47 МБ);
+- `MikroLab-linux-x64.tar.gz`, `MikroLab-linux-arm64.tar.gz` — Linux-студия на
+  Avalonia: исполняемый файл `MikroLab`, `LICENSE`, `THIRD-PARTY-NOTICES.md`
+  и `README.md`;
+- `MikroLab-osx-x64.tar.gz`, `MikroLab-osx-arm64.tar.gz` — macOS-студия в виде
+  `MikroLab.app` с теми же документами;
 - исходный код и лицензия доступны в репозитории и в архиве тега.
 
-CLI в релиз не входит: `MikroLab.Cli` остаётся инструментом разработки и
-проверки ядра.
+Все сборки self-contained: устанавливать .NET не нужно. CLI в релиз не входит:
+`MikroLab.Cli` остаётся инструментом разработки и проверки ядра.
 
 ### Портативность
 
 Студия не требует установки, не пишет в реестр и не создаёт файлов настроек.
-Скопируйте `MikroLab.exe` в любую папку и запустите. Если приложение
-аварийно завершится, `crash.log` появится рядом с `MikroLab.exe`; когда папка
-доступна только для чтения (например, `Program Files`), лог пишется в
-`%LOCALAPPDATA%\MikroLab\crash.log`.
+Windows: скопируйте `MikroLab.exe` в любую папку и запустите. Linux: распакуйте
+архив и запустите `./MikroLab`. macOS: распакуйте архив и запустите
+`MikroLab.app` (при необходимости — `open MikroLab.app`).
+
+Если приложение аварийно завершится, `crash.log` появится рядом с исполняемым
+файлом. Когда каталог доступен только для чтения, лог пишется в пользовательский
+каталог данных:
+
+| Платформа | Путь |
+|---|---|
+| Windows | `%LOCALAPPDATA%\MikroLab\crash.log` |
+| Linux | `~/.local/share/MikroLab/crash.log` |
+| macOS | `~/Library/Application Support/MikroLab/crash.log` |
 
 Релизные сборки не обфусцированы: из них удалены только отладочные символы
 (`.pdb`), а исходный код доступен на условиях GPLv3.
 
-WinForms-оболочка пока остаётся Windows-временной; презентационный слой
-`MikroLab.Presentation` уже отделён от WinForms, а `MikroLab.Core`,
-`MikroLab.Cli` и тесты собираются и проходят на Windows, Linux и macOS.
-Перенос интерфейса на Avalonia запланирован после наполнения этого слоя
-моделями представления.
+### macOS и Linux
+
+Сборки для macOS не подписаны сертификатом Apple. Если Gatekeeper блокирует
+запуск, разрешите приложение один раз:
+
+```bash
+xattr -dr com.apple.quarantine MikroLab.app
+open MikroLab.app
+```
+
+Либо нажмите на `MikroLab.app` правой кнопкой → «Открыть» → «Открыть».
+Минимальная версия — macOS 12.
+
+Для Linux нужны обычные библиотеки рабочего стола X11/Wayland и fontconfig
+(в минимальных контейнерах их может не быть). На x64-системах используйте
+`linux-x64`, на ARM64 (например, Raspberry Pi) — `linux-arm64`.
+
+Обе оболочки — WinForms и Avalonia — используют общий `MikroLab.Presentation`
+и `MikroLab.Core`, поэтому форматы файлов, профили, лабораторные работы,
+отладчик и горячие клавиши совпадают.
 
 ### CLI для разработки
 
-`MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Cli` и тесты не зависят от
-WinForms и собираются кроссплатформенно. CLI не публикуется в релизах:
+`MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Avalonia`, `MikroLab.Cli`
+и тесты не зависят от WinForms и собираются кроссплатформенно. CLI не
+публикуется в релизах:
 
 ```bash
 dotnet build src/MikroLab.Core/MikroLab.Core.csproj
 dotnet build src/MikroLab.Presentation/MikroLab.Presentation.csproj
+dotnet build src/MikroLab.Avalonia/MikroLab.Avalonia.csproj
 dotnet build src/MikroLab.Cli/MikroLab.Cli.csproj
 dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj
 ```
@@ -131,12 +176,22 @@ dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj
 Приложение умеет само снимать семь эталонных сцен:
 
 ```powershell
+# Windows (WinForms)
 src\MikroLab.App\bin\Debug\net10.0-windows\MikroLab.exe --capture docs\screens
+```
+
+```bash
+# Linux/macOS (Avalonia)
+src/MikroLab.Avalonia/bin/Debug/net10.0/MikroLab --capture docs/screens
 ```
 
 Файлы `01-studio-editor.png` … `07-laboratory-analog.png` перезаписываются в
 указанном каталоге. Для выбора стартового примера и рабочей области предусмотрены
 параметры `--sample N` и `--workspace studio|laboratory`.
+
+Эталоны в `docs/screens` сняты WinForms-оболочкой вместе с рамкой окна.
+Avalonia снимает клиентскую область, поэтому для неё сравнивайте содержимое
+сцен, а не байты PNG. В Linux без дисплея используйте `xvfb-run`.
 
 ## Горячие клавиши
 
@@ -352,13 +407,20 @@ MikroLab/
 │  │  ├─ Services/            # WinForms-реализации диалогов и снимков
 │  │  ├─ Workspaces/          # студия и лаборатория
 │  │  └─ MainForm.cs          # оболочка, горячие клавиши, скриншоты
+│  ├─ MikroLab.Avalonia/      # кроссплатформенная студия (Linux/macOS, Windows)
+│  │  ├─ Controls/            # редактор, память, приборы, клавиатура, инспектор
+│  │  ├─ Dialogs/             # диалоги адреса, профиля, байтов и справки
+│  │  ├─ Services/            # StorageProvider-диалоги, снимки, crash.log
+│  │  ├─ Workspaces/          # студия и лаборатория
+│  │  └─ MainWindow.cs        # оболочка, горячие клавиши, скриншоты
 │  └─ MikroLab.Cli/           # кроссплатформенный консольный инструмент
 ├─ tests/MikroLab.Tests/      # консольный набор тестов без зависимостей
 ├─ docs/screens/              # эталонные скриншоты
 ├─ .github/workflows/ci.yml   # Windows, Ubuntu и macOS
+├─ .github/workflows/release.yml # win-x64, linux-x64/arm64, osx-x64/arm64
 ├─ MikroLab.sln
 ├─ global.json
-└─ nuget.config               # очищенные источники пакетов
+└─ nuget.config               # nuget.org для пакетов Avalonia
 ```
 
 ## Тесты
@@ -393,12 +455,14 @@ MikroLab/
 
 `.github/workflows/ci.yml` собирает и тестирует проект в трёх окружениях:
 
-- **Windows** — всё решение, включая WinForms-приложение;
-- **Ubuntu** и **macOS** — `MikroLab.Core`, `MikroLab.Presentation`, `MikroLab.Cli`
-  и тесты.
+- **Windows** — всё решение, включая WinForms- и Avalonia-студию;
+- **Ubuntu** и **macOS** — `MikroLab.Core`, `MikroLab.Presentation`,
+  `MikroLab.Avalonia`, `MikroLab.Cli` и тесты.
 
-Это подтверждает, что ядро и консольные сценарии не зависят от Windows, а
-графический интерфейс остаётся отдельным Windows-слоем.
+Релизный workflow собирает Windows-студию (`win-x64`) и четыре
+кроссплатформенных образа: `linux-x64`, `linux-arm64`, `osx-x64`, `osx-arm64`.
+Каждый образ публикуется как self-contained single-file и упаковывается в
+`tar.gz`; macOS-архив содержит готовый `MikroLab.app`.
 
 ## Лицензия и авторство
 
