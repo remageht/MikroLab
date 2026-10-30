@@ -11,7 +11,7 @@ namespace MikroLab.Core.Machine
         public NibbleMemory Memory { get; }
         public MappedMemory AddressSpace { get; }
         public IoBus IoBus { get; }
-        public ICpu Cpu { get; }
+        public ICpu Cpu { get; private set; }
         public Ppi8255 Ppi { get; }
         public PpiPortMap PpiMap { get; }
         public DisplayState Display { get; }
@@ -134,6 +134,32 @@ namespace MikroLab.Core.Machine
                 Memory.Reset();
             }
             State = RunState.Stopped;
+        }
+
+        public void SwitchProfile(CpuProfile profile)
+        {
+            if (Cpu != null && Cpu.Profile == profile)
+            {
+                return;
+            }
+
+            CpuState oldState = Cpu?.State;
+            if (profile == CpuProfile.Extended)
+            {
+                Cpu = new ExtendedCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
+            }
+            else
+            {
+                Cpu = new LegacyCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
+            }
+
+            if (oldState != null)
+            {
+                Cpu.State.PC = oldState.PC;
+                Cpu.State.SP = oldState.SP;
+                Cpu.State.Flags = oldState.Flags;
+                Cpu.State.Cycles = oldState.Cycles;
+            }
         }
 
         public MachineSnapshot Capture()

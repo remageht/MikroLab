@@ -29,6 +29,7 @@ namespace MikroLab.App.Workspaces
         private readonly Label _cursorLabel;
         private readonly Label _breakLabel;
         private readonly ThemedDropDown _sampleBox;
+        private readonly ThemedDropDown _profileBox;
         private readonly UiButton _btnRun;
         private readonly UiButton _btnPause;
         private readonly UiButton _btnStep;
@@ -55,14 +56,15 @@ namespace MikroLab.App.Workspaces
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 2,
+                ColumnCount = 3,
                 RowCount = 1,
                 BackColor = AppTheme.Window,
-                Padding = new Padding(14, 12, 14, 12),
+                Padding = new Padding(12, 10, 12, 10),
                 Margin = new Padding(0)
             };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 400));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var left = new TableLayoutPanel
@@ -71,7 +73,7 @@ namespace MikroLab.App.Workspaces
                 ColumnCount = 1,
                 RowCount = 4,
                 BackColor = AppTheme.Window,
-                Margin = new Padding(0, 0, 14, 0),
+                Margin = new Padding(0, 0, 12, 0),
                 Padding = new Padding(0)
             };
             left.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
@@ -136,6 +138,24 @@ namespace MikroLab.App.Workspaces
             _sampleBox.SelectionChanged += OnSampleSelected;
             leftFlow.Controls.Add(_sampleBox);
 
+            leftFlow.Controls.Add(MakeSeparator());
+            Label profileLabel = AppTheme.Label("Режим", AppTheme.TextDim, AppTheme.SmallFont);
+            profileLabel.Margin = new Padding(4, 10, 6, 0);
+            leftFlow.Controls.Add(profileLabel);
+
+            _profileBox = new ThemedDropDown
+            {
+                Width = 160,
+                Height = 30,
+                Font = AppTheme.SmallFont,
+                Margin = new Padding(0, 3, 0, 0)
+            };
+            _profileBox.AddItem("Legacy (Лаб. 1–4)");
+            _profileBox.AddItem("Newest (Лаб. 5+)");
+            _profileBox.SelectIndex(_host.CpuProfile == MikroLab.Core.Cpu.CpuProfile.Legacy ? 0 : 1);
+            _profileBox.SelectionChanged += OnProfileSelected;
+            leftFlow.Controls.Add(_profileBox);
+
             var rightFlow = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -162,7 +182,7 @@ namespace MikroLab.App.Workspaces
             };
             debugFlow.Controls.Add(MakeSmallButton("В точку…", () => RunToAddress()));
             debugFlow.Controls.Add(MakeSmallButton("Точки…", () => ShowDebugPoints()));
-            debugFlow.Controls.Add(MakeSmallButton("Журнал", () => SelectInspector(4)));
+            debugFlow.Controls.Add(MakeSmallButton("Журнал", () => SelectInspector(3)));
             debugFlow.Controls.Add(MakeSmallButton("Очистить", () => { _host.ClearExecutionLog(); if (_logPanel != null) _logPanel.RefreshLog(_host.ExecutionLog, true); }));
 
             actionLayout.Controls.Add(leftFlow, 0, 0);
@@ -233,6 +253,39 @@ namespace MikroLab.App.Workspaces
             left.Controls.Add(editorCard, 0, 2);
             left.Controls.Add(outputCard, 0, 3);
 
+            // ---------------------------------------------------------- memory panel (always visible)
+
+            var memoryCard = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
+            var memoryLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                BackColor = AppTheme.Surface,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            memoryLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            memoryLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var memoryHeader = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = AppTheme.SurfaceRaised,
+                Padding = new Padding(12, 0, 12, 0)
+            };
+            Label memoryTitle = AppTheme.Label("ПАМЯТЬ · ЯЧЕЙКИ", AppTheme.Text, AppTheme.SmallBoldFont);
+            memoryTitle.Location = new Point(12, 10);
+            memoryTitle.AutoSize = true;
+            memoryHeader.Controls.Add(memoryTitle);
+
+            _memory = new MemoryPanel { Dock = DockStyle.Fill };
+            _memory.ByteWriteRequested += OnMemoryWrite;
+
+            memoryLayout.Controls.Add(memoryHeader, 0, 0);
+            memoryLayout.Controls.Add(_memory, 0, 1);
+            memoryCard.Controls.Add(memoryLayout);
+
             // ---------------------------------------------------------- inspector
 
             var inspector = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
@@ -252,17 +305,17 @@ namespace MikroLab.App.Workspaces
             var tabBar = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 5,
+                ColumnCount = 4,
                 RowCount = 1,
                 BackColor = AppTheme.SurfaceRaised,
                 Margin = new Padding(0),
                 Padding = new Padding(3)
             };
-            for (int i = 0; i < 5; i++) tabBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            for (int i = 0; i < 4; i++) tabBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
             tabBar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-            _inspectorTabs = new UiButton[5];
-            string[] labels = { "Регистры", "Память", "Устройства", "Стек", "Журнал" };
+            _inspectorTabs = new UiButton[4];
+            string[] labels = { "Регистры", "Устройства", "Стек", "Журнал" };
             for (int i = 0; i < labels.Length; i++)
             {
                 int index = i;
@@ -301,8 +354,6 @@ namespace MikroLab.App.Workspaces
             _registers = new RegisterPanel { Dock = DockStyle.Fill };
             _registers.RegisterEdited += OnRegisterEdited;
             _registers.FlagToggled += OnFlagToggled;
-            _memory = new MemoryPanel { Dock = DockStyle.Fill };
-            _memory.ByteWriteRequested += OnMemoryWrite;
             _devices = new DevicesPanel { Dock = DockStyle.Fill };
             _devices.AttachKeyboard(_host.Keyboard);
             _devices.TumblerChanged += OnTumblerChanged;
@@ -335,7 +386,6 @@ namespace MikroLab.App.Workspaces
             };
 
             _inspectorContent.Controls.Add(_registers);
-            _inspectorContent.Controls.Add(_memory);
             _inspectorContent.Controls.Add(_devices);
             _inspectorContent.Controls.Add(_stack);
             _inspectorContent.Controls.Add(_logPanel);
@@ -345,11 +395,20 @@ namespace MikroLab.App.Workspaces
             inspectorLayout.Controls.Add(_inspectorContent, 0, 2);
             inspector.Controls.Add(inspectorLayout);
 
-            root.Controls.Add(left, 0, 0);
-            root.Controls.Add(inspector, 1, 0);
+            root.Controls.Add(memoryCard, 0, 0);
+            root.Controls.Add(left, 1, 0);
+            root.Controls.Add(inspector, 2, 0);
             Controls.Add(root);
 
             _host.Output += SafeLog;
+            _host.CpuProfileChanged += profile =>
+            {
+                int idx = profile == MikroLab.Core.Cpu.CpuProfile.Legacy ? 0 : 1;
+                if (_profileBox.SelectedIndex != idx)
+                {
+                    _profileBox.SelectIndex(idx);
+                }
+            };
             SelectInspector(0);
             LoadSample(0, false);
             UpdateButtons();
@@ -730,6 +789,13 @@ namespace MikroLab.App.Workspaces
             _breakLabel.ForeColor = count > 0 ? AppTheme.Amber : AppTheme.TextDim;
         }
 
+        private void OnProfileSelected(int index)
+        {
+            if (index < 0) return;
+            var target = index == 0 ? MikroLab.Core.Cpu.CpuProfile.Legacy : MikroLab.Core.Cpu.CpuProfile.Extended;
+            _host.SwitchCpuProfile(target);
+        }
+
         private void SelectInspector(int index)
         {
             for (int i = 0; i < _inspectorTabs.Length; i++)
@@ -739,14 +805,12 @@ namespace MikroLab.App.Workspaces
             }
 
             _registers.Visible = index == 0;
-            _memory.Visible = index == 1;
-            _devices.Visible = index == 2;
-            _stack.Visible = index == 3;
-            _logPanel.Visible = index == 4;
+            _devices.Visible = index == 1;
+            _stack.Visible = index == 2;
+            _logPanel.Visible = index == 3;
             if (index == 0) _registers.BringToFront();
-            else if (index == 1) _memory.BringToFront();
-            else if (index == 2) _devices.BringToFront();
-            else if (index == 3) _stack.BringToFront();
+            else if (index == 1) _devices.BringToFront();
+            else if (index == 2) _stack.BringToFront();
             else _logPanel.BringToFront();
         }
 

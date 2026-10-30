@@ -445,6 +445,49 @@ namespace MikroLab.Core.Machine
             PublishSnapshot();
         }
 
+        public void SwitchProfile(Cpu.CpuProfile profile)
+        {
+            ThrowIfDisposed();
+
+            bool wasRunning;
+            if (_isRunning)
+            {
+                _shouldStop = true;
+                RequestClockStop();
+            }
+
+            lock (_lock)
+            {
+                wasRunning = _isRunning;
+                if (wasRunning)
+                {
+                    _shouldStop = true;
+                }
+            }
+
+            if (wasRunning)
+            {
+                Thread worker = _runThread;
+                if (worker != null && worker != Thread.CurrentThread &&
+                    !worker.Join(StopTimeoutMilliseconds))
+                {
+                    ExecutionError?.Invoke("Смена профиля отменена: поток выполнения не остановился.");
+                    return;
+                }
+            }
+
+            lock (_lock)
+            {
+                _machine.SwitchProfile(profile);
+            }
+            PublishSnapshot();
+
+            if (wasRunning && !_isDisposed)
+            {
+                Run();
+            }
+        }
+
         public void ClearExecutionLog()
         {
             ThrowIfDisposed();

@@ -42,6 +42,7 @@ namespace MikroLab.App
         private readonly ToolTip _toolTips;
 
         private readonly Label _stateLabel;
+        private readonly Label _profileLabel;
         private readonly Label _cyclesLabel;
         private readonly Label _pcLabel;
         private readonly Label _breakpointLabel;
@@ -272,7 +273,7 @@ namespace MikroLab.App
             var statusLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 7,
+                ColumnCount = 8,
                 RowCount = 1,
                 BackColor = AppTheme.Surface,
                 Margin = new Padding(0),
@@ -283,11 +284,13 @@ namespace MikroLab.App
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             _stateLabel = MakeStatusLabel("● ОСТАНОВЛЕНО", AppTheme.TextMuted);
+            _profileLabel = MakeStatusLabel("Режим: Newest", AppTheme.Cyan);
             _cyclesLabel = MakeStatusLabel("тактов: 0", AppTheme.TextMuted);
             _pcLabel = MakeStatusLabel("PC 8000h", AppTheme.Cyan);
             _breakpointLabel = MakeStatusLabel("точек останова: 0", AppTheme.TextMuted);
@@ -308,11 +311,12 @@ namespace MikroLab.App
                 Margin = new Padding(12, 9, 12, 9)
             };
             statusLayout.Controls.Add(separator, 1, 0);
-            statusLayout.Controls.Add(_pcLabel, 2, 0);
-            statusLayout.Controls.Add(_cyclesLabel, 3, 0);
-            statusLayout.Controls.Add(_breakpointLabel, 4, 0);
-            statusLayout.Controls.Add(_reasonLabel, 5, 0);
-            statusLayout.Controls.Add(_workspaceLabel, 6, 0);
+            statusLayout.Controls.Add(_profileLabel, 2, 0);
+            statusLayout.Controls.Add(_pcLabel, 3, 0);
+            statusLayout.Controls.Add(_cyclesLabel, 4, 0);
+            statusLayout.Controls.Add(_breakpointLabel, 5, 0);
+            statusLayout.Controls.Add(_reasonLabel, 6, 0);
+            statusLayout.Controls.Add(_workspaceLabel, 7, 0);
             status.Controls.Add(statusLayout);
 
             root.Controls.Add(_header, 0, 0);
@@ -450,6 +454,12 @@ namespace MikroLab.App
 
             if (_stateLabel.Text != label) _stateLabel.Text = label;
             if (_stateLabel.ForeColor != color) _stateLabel.ForeColor = color;
+
+            bool isLegacy = _host.CpuProfile == MikroLab.Core.Cpu.CpuProfile.Legacy;
+            string profText = isLegacy ? "Режим: Legacy" : "Режим: Newest";
+            Color profColor = isLegacy ? AppTheme.Amber : AppTheme.Cyan;
+            if (_profileLabel.Text != profText) _profileLabel.Text = profText;
+            if (_profileLabel.ForeColor != profColor) _profileLabel.ForeColor = profColor;
 
             _pcLabel.Text = "PC " + snapshot.PC.ToString("X4", CultureInfo.InvariantCulture) + "h";
             _cyclesLabel.Text = "тактов: " + snapshot.Cycles.ToString("N0", CultureInfo.InvariantCulture);

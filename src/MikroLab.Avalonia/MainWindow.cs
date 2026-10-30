@@ -68,6 +68,7 @@ namespace MikroLab.Studio
         private readonly TextBlock _stateLabel;
         private readonly TextBlock _cyclesLabel;
         private readonly TextBlock _pcLabel;
+        private readonly TextBlock _profileLabel;
         private readonly TextBlock _breakpointLabel;
         private readonly TextBlock _reasonLabel;
         private readonly TextBlock _workspaceLabel;
@@ -271,13 +272,14 @@ namespace MikroLab.Studio
 
             var statusLayout = new Grid
             {
-                ColumnDefinitions = ColumnDefinitions.Parse("Auto,1,Auto,Auto,Auto,*,Auto"),
+                ColumnDefinitions = ColumnDefinitions.Parse("Auto,1,Auto,Auto,Auto,Auto,*,Auto"),
                 Margin = new Thickness(14, 0)
             };
 
             _stateLabel = MakeStatusLabel("● ОСТАНОВЛЕНО", AppTheme.TextMuted);
             _cyclesLabel = MakeStatusLabel("тактов: 0", AppTheme.TextMuted);
             _pcLabel = MakeStatusLabel("PC 8000h", AppTheme.Cyan);
+            _profileLabel = MakeStatusLabel("Режим: Legacy", AppTheme.Amber);
             _breakpointLabel = MakeStatusLabel("точек останова: 0", AppTheme.TextMuted);
             _reasonLabel = MakeStatusLabel(string.Empty, AppTheme.TextMuted);
             _reasonLabel.HorizontalAlignment = HorizontalAlignment.Left;
@@ -299,12 +301,14 @@ namespace MikroLab.Studio
             Grid.SetColumn(_pcLabel, 2);
             statusLayout.Children.Add(_cyclesLabel);
             Grid.SetColumn(_cyclesLabel, 3);
+            statusLayout.Children.Add(_profileLabel);
+            Grid.SetColumn(_profileLabel, 4);
             statusLayout.Children.Add(_breakpointLabel);
-            Grid.SetColumn(_breakpointLabel, 4);
+            Grid.SetColumn(_breakpointLabel, 5);
             statusLayout.Children.Add(_reasonLabel);
-            Grid.SetColumn(_reasonLabel, 5);
+            Grid.SetColumn(_reasonLabel, 6);
             statusLayout.Children.Add(_workspaceLabel);
-            Grid.SetColumn(_workspaceLabel, 6);
+            Grid.SetColumn(_workspaceLabel, 7);
 
             status.Child = statusLayout;
             root.Children.Add(status);
@@ -415,6 +419,12 @@ namespace MikroLab.Studio
 
             _pcLabel.Text = "PC " + snapshot.PC.ToString("X4", CultureInfo.InvariantCulture) + "h";
             _cyclesLabel.Text = "тактов: " + snapshot.Cycles.ToString("N0", CultureInfo.InvariantCulture);
+
+            bool isLegacy = _host.CpuProfile == MikroLab.Core.Cpu.CpuProfile.Legacy;
+            string profileText = isLegacy ? "Режим: Legacy" : "Режим: Newest";
+            if (_profileLabel.Text != profileText) _profileLabel.Text = profileText;
+            _profileLabel.Foreground = AppTheme.Brush(isLegacy ? AppTheme.Amber : AppTheme.Cyan);
+
             _breakpointLabel.Text = "точек останова: " + _host.ActiveBreakpointCount;
 
             string reason = state == RunState.Paused || state == RunState.Halted

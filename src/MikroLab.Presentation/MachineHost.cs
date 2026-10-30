@@ -90,8 +90,22 @@ namespace MikroLab.Presentation
         public MachineProfile Profile => _profile;
         public ushort Origin => _profile.Origin;
         public ushort StackPointer => _profile.StackPointer;
+        public CpuProfile CpuProfile => _machine.Cpu.Profile;
 
+        public event Action<CpuProfile> CpuProfileChanged;
         public event Action<string, LogLevel> Output;
+
+        public void SwitchCpuProfile(CpuProfile profile)
+        {
+            if (_machine.Cpu.Profile == profile) return;
+
+            _session.SwitchProfile(profile);
+            string desc = profile == CpuProfile.Legacy
+                ? "Legacy (Лабораторные 1–4, особенности КР580, регистры 83E4h)"
+                : "Newest / Extended (Лабораторная 5+, полный Intel 8080)";
+            Output?.Invoke("Профиль процессора: " + desc, LogLevel.Info);
+            CpuProfileChanged?.Invoke(profile);
+        }
 
         // ------------------------------------------------------------------ assemble/load
 

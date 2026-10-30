@@ -41,6 +41,7 @@ namespace MikroLab.Studio.Workspaces
         private readonly TextBlock _cursorLabel;
         private readonly TextBlock _breakLabel;
         private readonly ThemedDropDown _sampleBox;
+        private readonly ThemedDropDown _profileBox;
         private readonly UiButton _btnRun;
         private readonly UiButton _btnPause;
         private readonly UiButton _btnStep;
@@ -64,9 +65,9 @@ namespace MikroLab.Studio.Workspaces
 
             var root = new Grid
             {
-                ColumnDefinitions = ColumnDefinitions.Parse("*,400"),
-                ColumnSpacing = 14,
-                Margin = new Thickness(14, 12, 14, 12)
+                ColumnDefinitions = ColumnDefinitions.Parse("330,*,380"),
+                ColumnSpacing = 12,
+                Margin = new Thickness(12, 10, 12, 10)
             };
 
             var left = new Grid
@@ -119,6 +120,23 @@ namespace MikroLab.Studio.Workspaces
             _sampleBox.SelectionChanged += OnSampleSelected;
             leftFlow.Children.Add(_sampleBox);
 
+            var profileLabel = AppTheme.Label("Режим:", AppTheme.TextDim, AppTheme.SmallSize);
+            profileLabel.VerticalAlignment = VerticalAlignment.Center;
+            profileLabel.Margin = new Thickness(4, 0, 2, 0);
+            leftFlow.Children.Add(profileLabel);
+
+            _profileBox = new ThemedDropDown
+            {
+                Width = 160,
+                Height = 30,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _profileBox.AddItem("Legacy (Лаб. 1–4)");
+            _profileBox.AddItem("Newest (Лаб. 5+)");
+            _profileBox.SelectIndex(_host.CpuProfile == MikroLab.Core.Cpu.CpuProfile.Legacy ? 0 : 1);
+            _profileBox.SelectionChanged += OnProfileSelected;
+            leftFlow.Children.Add(_profileBox);
+
             actionLayout.Children.Add(leftFlow);
 
             var rightFlow = new StackPanel
@@ -140,7 +158,7 @@ namespace MikroLab.Studio.Workspaces
             };
             debugFlow.Children.Add(MakeSmallButton("В точку…", RunToAddressAsync));
             debugFlow.Children.Add(MakeSmallButton("Точки…", ShowDebugPointsAsync));
-            debugFlow.Children.Add(MakeSmallButton("Журнал", () => SelectInspector(4)));
+            debugFlow.Children.Add(MakeSmallButton("Журнал", () => SelectInspector(3)));
             debugFlow.Children.Add(MakeSmallButton("Очистить", () =>
             {
                 _host.ClearExecutionLog();
@@ -198,6 +216,32 @@ namespace MikroLab.Studio.Workspaces
             left.Children.Add(outputCard);
             Grid.SetRow(outputCard, 3);
 
+            // ---------------------------------------------------------- memory panel (always visible)
+
+            var memoryLayout = new Grid
+            {
+                RowDefinitions = RowDefinitions.Parse("38,*")
+            };
+
+            var memoryHeader = new Grid
+            {
+                Background = AppTheme.Brush(AppTheme.SurfaceRaised),
+                Margin = new Thickness(0)
+            };
+            var memoryTitle = AppTheme.Label("ПАМЯТЬ · ЯЧЕЙКИ", AppTheme.Text, AppTheme.SmallSize, true);
+            memoryTitle.Margin = new Thickness(12, 10, 12, 0);
+            memoryHeader.Children.Add(memoryTitle);
+
+            _memory = new MemoryPanel();
+            _memory.ByteWriteRequested += OnMemoryWrite;
+
+            memoryLayout.Children.Add(memoryHeader);
+            Grid.SetRow(memoryHeader, 0);
+            memoryLayout.Children.Add(_memory);
+            Grid.SetRow(_memory, 1);
+
+            var memoryCard = Card(memoryLayout);
+
             // ---------------------------------------------------------- inspector
 
             var inspectorLayout = new Grid
@@ -207,12 +251,12 @@ namespace MikroLab.Studio.Workspaces
 
             var tabBar = new Grid
             {
-                ColumnDefinitions = ColumnDefinitions.Parse("*,*,*,*,*"),
+                ColumnDefinitions = ColumnDefinitions.Parse("*,*,*,*"),
                 Background = AppTheme.Brush(AppTheme.SurfaceRaised),
                 Margin = new Thickness(0)
             };
-            _inspectorTabs = new UiButton[5];
-            string[] labels = { "Регистры", "Память", "Устройства", "Стек", "Журнал" };
+            _inspectorTabs = new UiButton[4];
+            string[] labels = { "Регистры", "Устройства", "Стек", "Журнал" };
             for (int i = 0; i < labels.Length; i++)
             {
                 int index = i;
@@ -251,8 +295,6 @@ namespace MikroLab.Studio.Workspaces
             _registers = new RegisterPanel();
             _registers.RegisterEdited += OnRegisterEdited;
             _registers.FlagToggled += OnFlagToggled;
-            _memory = new MemoryPanel();
-            _memory.ByteWriteRequested += OnMemoryWrite;
             _devices = new DevicesPanel();
             _devices.AttachKeyboard(_host.Keyboard);
             _devices.TumblerChanged += OnTumblerChanged;
@@ -268,7 +310,6 @@ namespace MikroLab.Studio.Workspaces
             _logPanel.ExportRequested += ExportLogAsync;
 
             _inspectorContent.Children.Add(_registers);
-            _inspectorContent.Children.Add(_memory);
             _inspectorContent.Children.Add(_devices);
             _inspectorContent.Children.Add(_stack);
             _inspectorContent.Children.Add(_logPanel);
@@ -276,12 +317,23 @@ namespace MikroLab.Studio.Workspaces
             Grid.SetRow(_inspectorContent, 2);
 
             var inspectorCard = Card(inspectorLayout);
+            root.Children.Add(memoryCard);
+            Grid.SetColumn(memoryCard, 0);
             root.Children.Add(left);
+            Grid.SetColumn(left, 1);
             root.Children.Add(inspectorCard);
-            Grid.SetColumn(inspectorCard, 1);
+            Grid.SetColumn(inspectorCard, 2);
             Content = root;
 
             _host.Output += SafeLog;
+            _host.CpuProfileChanged += profile =>
+            {
+                int idx = profile == MikroLab.Core.Cpu.CpuProfile.Legacy ? 0 : 1;
+                if (_profileBox.SelectedIndex != idx)
+                {
+                    _profileBox.SelectIndex(idx);
+                }
+            };
             SelectInspector(0);
             LoadSample(0, false);
             UpdateButtons();
@@ -681,6 +733,13 @@ namespace MikroLab.Studio.Workspaces
             _breakLabel.Foreground = AppTheme.Brush(count > 0 ? AppTheme.Amber : AppTheme.TextDim);
         }
 
+        private void OnProfileSelected(int index)
+        {
+            if (index < 0) return;
+            var target = index == 0 ? MikroLab.Core.Cpu.CpuProfile.Legacy : MikroLab.Core.Cpu.CpuProfile.Extended;
+            _host.SwitchCpuProfile(target);
+        }
+
         private void SelectInspector(int index)
         {
             for (int i = 0; i < _inspectorTabs.Length; i++)
@@ -690,10 +749,9 @@ namespace MikroLab.Studio.Workspaces
             }
 
             _registers.IsVisible = index == 0;
-            _memory.IsVisible = index == 1;
-            _devices.IsVisible = index == 2;
-            _stack.IsVisible = index == 3;
-            _logPanel.IsVisible = index == 4;
+            _devices.IsVisible = index == 1;
+            _stack.IsVisible = index == 2;
+            _logPanel.IsVisible = index == 3;
         }
 
         // ------------------------------------------------------------------ update loop
