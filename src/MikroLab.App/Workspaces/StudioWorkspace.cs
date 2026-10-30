@@ -62,9 +62,9 @@ namespace MikroLab.App.Workspaces
                 Padding = new Padding(12, 10, 12, 10),
                 Margin = new Padding(0)
             };
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 380));
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 510));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             var left = new TableLayoutPanel
@@ -253,9 +253,9 @@ namespace MikroLab.App.Workspaces
             left.Controls.Add(editorCard, 0, 2);
             left.Controls.Add(outputCard, 0, 3);
 
-            // ---------------------------------------------------------- memory panel (always visible)
+            // ---------------------------------------------------------- memory panel (always visible, on the right)
 
-            var memoryCard = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
+            var memoryCard = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
             var memoryLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -274,21 +274,22 @@ namespace MikroLab.App.Workspaces
                 BackColor = AppTheme.SurfaceRaised,
                 Padding = new Padding(12, 0, 12, 0)
             };
-            Label memoryTitle = AppTheme.Label("ПАМЯТЬ · ЯЧЕЙКИ", AppTheme.Text, AppTheme.SmallBoldFont);
+            Label memoryTitle = AppTheme.Label("ЯЧЕЙКИ ПАМЯТИ (ОЗУ 64 КБ)", AppTheme.Text, AppTheme.SmallBoldFont);
             memoryTitle.Location = new Point(12, 10);
             memoryTitle.AutoSize = true;
             memoryHeader.Controls.Add(memoryTitle);
 
             _memory = new MemoryPanel { Dock = DockStyle.Fill };
             _memory.ByteWriteRequested += OnMemoryWrite;
+            _memory.ClearMemoryRequested += () => _host.ClearMemory();
 
             memoryLayout.Controls.Add(memoryHeader, 0, 0);
             memoryLayout.Controls.Add(_memory, 0, 1);
             memoryCard.Controls.Add(memoryLayout);
 
-            // ---------------------------------------------------------- inspector
+            // ---------------------------------------------------------- inspector (on the left)
 
-            var inspector = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+            var inspector = new CardPanel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
             var inspectorLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -395,9 +396,9 @@ namespace MikroLab.App.Workspaces
             inspectorLayout.Controls.Add(_inspectorContent, 0, 2);
             inspector.Controls.Add(inspectorLayout);
 
-            root.Controls.Add(memoryCard, 0, 0);
+            root.Controls.Add(inspector, 0, 0);
             root.Controls.Add(left, 1, 0);
-            root.Controls.Add(inspector, 2, 0);
+            root.Controls.Add(memoryCard, 2, 0);
             Controls.Add(root);
 
             _host.Output += SafeLog;

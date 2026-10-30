@@ -65,7 +65,7 @@ namespace MikroLab.Studio.Workspaces
 
             var root = new Grid
             {
-                ColumnDefinitions = ColumnDefinitions.Parse("330,*,380"),
+                ColumnDefinitions = ColumnDefinitions.Parse("360,*,510"),
                 ColumnSpacing = 12,
                 Margin = new Thickness(12, 10, 12, 10)
             };
@@ -228,7 +228,7 @@ namespace MikroLab.Studio.Workspaces
                 Background = AppTheme.Brush(AppTheme.SurfaceRaised),
                 Margin = new Thickness(0)
             };
-            var memoryTitle = AppTheme.Label("ПАМЯТЬ · ЯЧЕЙКИ", AppTheme.Text, AppTheme.SmallSize, true);
+            var memoryTitle = AppTheme.Label("ЯЧЕЙКИ ПАМЯТИ (ОЗУ 64 КБ)", AppTheme.Text, AppTheme.SmallSize, true);
             memoryTitle.Margin = new Thickness(12, 10, 12, 0);
             memoryHeader.Children.Add(memoryTitle);
 
@@ -317,12 +317,12 @@ namespace MikroLab.Studio.Workspaces
             Grid.SetRow(_inspectorContent, 2);
 
             var inspectorCard = Card(inspectorLayout);
-            root.Children.Add(memoryCard);
-            Grid.SetColumn(memoryCard, 0);
+            root.Children.Add(inspectorCard);
+            Grid.SetColumn(inspectorCard, 0);
             root.Children.Add(left);
             Grid.SetColumn(left, 1);
-            root.Children.Add(inspectorCard);
-            Grid.SetColumn(inspectorCard, 2);
+            root.Children.Add(memoryCard);
+            Grid.SetColumn(memoryCard, 2);
             Content = root;
 
             _host.Output += SafeLog;

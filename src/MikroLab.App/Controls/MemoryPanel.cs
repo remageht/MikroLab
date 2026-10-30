@@ -29,6 +29,7 @@ namespace MikroLab.App.Controls
         private int _nibbleHigh = -1;
 
         public event Action<ushort, byte> ByteEditRequested;
+        public event Action<ushort, byte> CellSelected;
 
         public bool FollowPc
         {
@@ -42,6 +43,18 @@ namespace MikroLab.App.Controls
 
         public ushort TopAddress => _topAddress;
         public ushort SelectedAddress => _selectedAddress >= 0 ? (ushort)_selectedAddress : (ushort)0;
+        public byte SelectedByte => GetByte(SelectedAddress);
+
+        public byte GetByte(ushort address) => _memory != null && address < _memory.Length ? _memory[address] : (byte)0;
+
+        public void SetByteLocal(ushort address, byte value)
+        {
+            if (_memory != null && address < _memory.Length)
+            {
+                _memory[address] = value;
+                Invalidate();
+            }
+        }
 
         public HexViewer()
         {
@@ -94,6 +107,10 @@ namespace MikroLab.App.Controls
             _topAddress = AlignDown(address);
             SyncScroll();
             Invalidate();
+            if (_memory != null && address < _memory.Length)
+            {
+                CellSelected?.Invoke(address, _memory[address]);
+            }
         }
 
         public void ScrollToAddress(ushort address)
@@ -114,7 +131,8 @@ namespace MikroLab.App.Controls
         {
             if (Font == null) return;
 
-            _charWidth = Math.Max(6, TextRenderer.MeasureText("00", Font).Width);
+            int tenChars = TextRenderer.MeasureText("0000000000", Font).Width - TextRenderer.MeasureText("", Font).Width;
+            _charWidth = Math.Max(6, tenChars / 10);
             int available = Math.Max(120, Width - _scroll.Width - 16);
 
             int chosen = 4;
@@ -200,6 +218,10 @@ namespace MikroLab.App.Controls
 
             _selectedAddress = address;
             Invalidate();
+            if (_memory != null && address < _memory.Length)
+            {
+                CellSelected?.Invoke(address, _memory[address]);
+            }
 
             if (e.Clicks >= 2)
             {
@@ -349,8 +371,8 @@ namespace MikroLab.App.Controls
                     int address = baseAddress + i;
                     byte value = _memory[address];
                     Color color = value == 0 ? AppTheme.TextDim : AppTheme.Text;
-                    if (address == _pc) color = AppTheme.Amber;
-                    if (address == _selectedAddress) color = AppTheme.Text;
+                    if (address == _pc) color = AppTheme.Cyan;
+                    if (address == _selectedAddress) color = AppTheme.Amber;
 
                     TextRenderer.DrawText(
                         graphics,
@@ -359,9 +381,21 @@ namespace MikroLab.App.Controls
                         new Point(bytesX + i * _charWidth * 3, y + 2),
                         color);
 
+                    if (address == _pc)
+                    {
+                        using (var pcPen = new Pen(AppTheme.Cyan, 1.5f))
+                        {
+                            graphics.DrawRectangle(pcPen,
+                                bytesX + i * _charWidth * 3 - 2,
+                                y + 1,
+                                _charWidth * 2 + 3,
+                                lineHeight - 2);
+                        }
+                    }
+
                     if (address == _selectedAddress)
                     {
-                        using (var pen = new Pen(AppTheme.Accent))
+                        using (var pen = new Pen(AppTheme.Amber, 1.5f))
                         {
                             graphics.DrawRectangle(pen,
                                 bytesX + i * _charWidth * 3 - 2,
@@ -394,8 +428,12 @@ namespace MikroLab.App.Controls
         private readonly HexViewer _hex;
         private readonly TextBox _addressBox;
         private readonly ToggleSwitch _followPc;
+        private readonly TextBox _editAddressBox;
+        private readonly TextBox _editByteBox;
+        private readonly Label _infoLabel;
 
         public event Action<ushort, byte> ByteWriteRequested;
+        public event Action ClearMemoryRequested;
 
         private MachineSnapshot _snapshot;
 
@@ -403,26 +441,28 @@ namespace MikroLab.App.Controls
         {
             BackColor = AppTheme.Surface;
 
+            // ---------------- Top Bar (Navigation) ----------------
             var topBar = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 78,
+                Height = 38,
                 BackColor = AppTheme.Surface,
-                Padding = new Padding(12, 8, 12, 6)
+                Padding = new Padding(8, 5, 8, 5)
             };
 
             Label addressLabel = AppTheme.Label("Адрес", AppTheme.TextMuted, AppTheme.SmallFont);
-            addressLabel.Location = new Point(12, 14);
+            addressLabel.Location = new Point(8, 10);
+            addressLabel.AutoSize = true;
 
             _addressBox = new TextBox
             {
                 Text = "8000",
-                Width = 76,
+                Width = 56,
                 BackColor = AppTheme.EditorBackground,
                 ForeColor = AppTheme.Text,
                 BorderStyle = BorderStyle.FixedSingle,
                 Font = AppTheme.MonoSmall,
-                Location = new Point(62, 10)
+                Location = new Point(52, 7)
             };
             _addressBox.KeyDown += (sender, args) =>
             {
@@ -437,42 +477,74 @@ namespace MikroLab.App.Controls
             {
                 Text = "Перейти",
                 Kind = UiButtonKind.Subtle,
-                Width = 76,
-                Height = 28,
-                Location = new Point(144, 7)
+                Width = 66,
+                Height = 26,
+                Location = new Point(114, 5)
             };
             go.Click += (sender, args) => GoToAddress();
+
+            var prevPage = new UiButton
+            {
+                Text = "< -256",
+                Kind = UiButtonKind.Ghost,
+                Width = 58,
+                Height = 26,
+                Location = new Point(184, 5)
+            };
+            prevPage.Click += (sender, args) =>
+            {
+                ushort target = (ushort)Math.Max(0, _hex.TopAddress - 256);
+                SetAddress(target);
+            };
+
+            var nextPage = new UiButton
+            {
+                Text = "+256 >",
+                Kind = UiButtonKind.Ghost,
+                Width = 58,
+                Height = 26,
+                Location = new Point(246, 5)
+            };
+            nextPage.Click += (sender, args) =>
+            {
+                ushort target = (ushort)Math.Min(65536 - 256, _hex.TopAddress + 256);
+                SetAddress(target);
+            };
 
             _followPc = new ToggleSwitch
             {
                 Text = "Следить за PC",
                 Checked = true,
-                Width = 150,
-                Height = 28,
+                Width = 140,
+                Height = 26,
                 ForeColor = AppTheme.TextMuted,
                 Font = AppTheme.SmallFont,
-                Location = new Point(226, 7)
+                Location = new Point(310, 5)
             };
             _followPc.CheckedChanged += (sender, args) => _hex.FollowPc = _followPc.Checked;
 
             topBar.Controls.Add(addressLabel);
             topBar.Controls.Add(_addressBox);
             topBar.Controls.Add(go);
+            topBar.Controls.Add(prevPage);
+            topBar.Controls.Add(nextPage);
             topBar.Controls.Add(_followPc);
 
+            // ---------------- Jump Bar (Registers) ----------------
             var jumpBar = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 32,
+                Height = 28,
                 BackColor = AppTheme.Surface,
-                Padding = new Padding(12, 2, 12, 4)
+                Padding = new Padding(8, 2, 8, 4)
             };
 
-            Label jumpLabel = AppTheme.Label("Перейти к", AppTheme.TextMuted, AppTheme.SmallFont);
-            jumpLabel.Location = new Point(12, 8);
+            Label jumpLabel = AppTheme.Label("Перейти к:", AppTheme.TextMuted, AppTheme.SmallFont);
+            jumpLabel.Location = new Point(8, 6);
+            jumpLabel.AutoSize = true;
             jumpBar.Controls.Add(jumpLabel);
 
-            int jumpX = 92;
+            int jumpX = 74;
             foreach (var pair in new[] { "PC", "HL", "DE", "BC", "SP" })
             {
                 string target = pair;
@@ -480,26 +552,163 @@ namespace MikroLab.App.Controls
                 {
                     Text = target,
                     Kind = UiButtonKind.Ghost,
-                    Width = 46,
-                    Height = 24,
+                    Width = 44,
+                    Height = 22,
                     Font = AppTheme.SmallFont,
-                    Location = new Point(jumpX, 4)
+                    Location = new Point(jumpX, 3)
                 };
                 button.Click += (sender, args) => JumpToRegister(target);
                 jumpBar.Controls.Add(button);
-                jumpX += 50;
+                jumpX += 48;
             }
 
+            // ---------------- Bottom Bar (Cell Edit & Clear) ----------------
+            var bottomBar = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 142,
+                BackColor = AppTheme.SurfaceRaised,
+                Padding = new Padding(10, 4, 10, 6)
+            };
+
+            Label sectionTitle = AppTheme.Label("--- ВВОД ЗНАЧЕНИЯ В ВЫБРАННУЮ ЯЧЕЙКУ ---", AppTheme.TextDim, AppTheme.SmallBoldFont);
+            sectionTitle.Location = new Point(10, 4);
+            sectionTitle.AutoSize = true;
+
+            Label editAddrLabel = AppTheme.Label("Адрес:", AppTheme.TextMuted, AppTheme.SmallFont);
+            editAddrLabel.Location = new Point(10, 28);
+            editAddrLabel.AutoSize = true;
+
+            _editAddressBox = new TextBox
+            {
+                Text = "8000",
+                Width = 54,
+                BackColor = AppTheme.EditorBackground,
+                ForeColor = AppTheme.Text,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = AppTheme.MonoSmall,
+                Location = new Point(54, 25)
+            };
+
+            Label editByteLabel = AppTheme.Label("Байт (HEX):", AppTheme.TextMuted, AppTheme.SmallFont);
+            editByteLabel.Location = new Point(116, 28);
+            editByteLabel.AutoSize = true;
+
+            _editByteBox = new TextBox
+            {
+                Text = "00",
+                Width = 38,
+                BackColor = AppTheme.EditorBackground,
+                ForeColor = AppTheme.Text,
+                BorderStyle = BorderStyle.FixedSingle,
+                Font = AppTheme.MonoSmall,
+                Location = new Point(190, 25)
+            };
+            _editByteBox.KeyDown += (sender, args) =>
+            {
+                if (args.KeyCode == Keys.Enter)
+                {
+                    args.SuppressKeyPress = true;
+                    CommitWrite();
+                }
+            };
+
+            var btnWrite = new UiButton
+            {
+                Text = "Записать (Write)",
+                Kind = UiButtonKind.Primary,
+                Width = 136,
+                Height = 26,
+                Location = new Point(236, 23)
+            };
+            btnWrite.Click += (sender, args) => CommitWrite();
+
+            Label quickLabel = AppTheme.Label("Быстрый ввод:", AppTheme.TextMuted, AppTheme.SmallFont);
+            quickLabel.Location = new Point(10, 56);
+            quickLabel.AutoSize = true;
+
+            var btn00 = new UiButton { Text = "00H", Kind = UiButtonKind.Secondary, Width = 48, Height = 23, Location = new Point(96, 53) };
+            btn00.Click += (sender, args) => QuickWrite(0x00, true);
+
+            var btnFF = new UiButton { Text = "FFH", Kind = UiButtonKind.Secondary, Width = 48, Height = 23, Location = new Point(148, 53) };
+            btnFF.Click += (sender, args) => QuickWrite(0xFF, true);
+
+            var btnInc = new UiButton { Text = "+1", Kind = UiButtonKind.Secondary, Width = 42, Height = 23, Location = new Point(200, 53) };
+            btnInc.Click += (sender, args) => QuickWrite(1, false);
+
+            var btnDec = new UiButton { Text = "-1", Kind = UiButtonKind.Secondary, Width = 42, Height = 23, Location = new Point(246, 53) };
+            btnDec.Click += (sender, args) => QuickWrite(-1, false);
+
+            var btnNop = new UiButton { Text = "NOP (00)", Kind = UiButtonKind.Secondary, Width = 74, Height = 23, Location = new Point(292, 53) };
+            btnNop.Click += (sender, args) => QuickWrite(0x00, true);
+
+            _infoLabel = AppTheme.Label("Ячейка [8000H]: Значение 00H (Dec: 0, ASCII: '.')", AppTheme.Cyan, AppTheme.MonoSmall);
+            _infoLabel.Location = new Point(10, 82);
+            _infoLabel.AutoSize = true;
+
+            var btnClearMem = new UiButton
+            {
+                Text = "Очистить всю память (Clear 64KB)",
+                Kind = UiButtonKind.Danger,
+                Width = 222,
+                Height = 26,
+                Location = new Point(10, 107)
+            };
+            btnClearMem.Click += (sender, args) =>
+            {
+                var res = MessageBox.Show(
+                    FindForm(),
+                    "Очистить все 64 КБ памяти (заполнить нулями 00h)?",
+                    "Очистка памяти",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (res == DialogResult.Yes)
+                {
+                    ClearMemoryRequested?.Invoke();
+                }
+            };
+
+            var btnGoPc = new UiButton
+            {
+                Text = "Перейти к адресу PC",
+                Kind = UiButtonKind.Subtle,
+                Width = 156,
+                Height = 26,
+                Location = new Point(238, 107)
+            };
+            btnGoPc.Click += (sender, args) => JumpToRegister("PC");
+
+            bottomBar.Controls.Add(sectionTitle);
+            bottomBar.Controls.Add(editAddrLabel);
+            bottomBar.Controls.Add(_editAddressBox);
+            bottomBar.Controls.Add(editByteLabel);
+            bottomBar.Controls.Add(_editByteBox);
+            bottomBar.Controls.Add(btnWrite);
+            bottomBar.Controls.Add(quickLabel);
+            bottomBar.Controls.Add(btn00);
+            bottomBar.Controls.Add(btnFF);
+            bottomBar.Controls.Add(btnInc);
+            bottomBar.Controls.Add(btnDec);
+            bottomBar.Controls.Add(btnNop);
+            bottomBar.Controls.Add(_infoLabel);
+            bottomBar.Controls.Add(btnClearMem);
+            bottomBar.Controls.Add(btnGoPc);
+
+            // ---------------- Hex Viewer (Fill) ----------------
             _hex = new HexViewer { Dock = DockStyle.Fill };
+            _hex.CellSelected += (addr, val) => UpdateInfo(addr, val);
             _hex.ByteEditRequested += (address, value) =>
             {
                 if (TryPromptByte(address, value, out byte result))
                 {
+                    _hex.SetByteLocal(address, result);
+                    UpdateInfo(address, result);
                     ByteWriteRequested?.Invoke(address, result);
                 }
             };
 
             Controls.Add(_hex);
+            Controls.Add(bottomBar);
             Controls.Add(jumpBar);
             Controls.Add(topBar);
         }
@@ -508,6 +717,56 @@ namespace MikroLab.App.Controls
         {
             _snapshot = snapshot;
             _hex.UpdateSnapshot(snapshot);
+            ushort sel = _hex.SelectedAddress;
+            byte val = _hex.GetByte(sel);
+            UpdateInfo(sel, val);
+        }
+
+        private void CommitWrite()
+        {
+            string addrText = (_editAddressBox.Text ?? "").Trim().TrimEnd('h', 'H');
+            string byteText = (_editByteBox.Text ?? "").Trim().TrimEnd('h', 'H');
+            if (ushort.TryParse(addrText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort address) &&
+                byte.TryParse(byteText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte value))
+            {
+                _hex.SetByteLocal(address, value);
+                UpdateInfo(address, value);
+                ByteWriteRequested?.Invoke(address, value);
+            }
+        }
+
+        private void QuickWrite(int deltaOrDirect, bool direct)
+        {
+            string addrText = (_editAddressBox.Text ?? "").Trim().TrimEnd('h', 'H');
+            if (!ushort.TryParse(addrText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort address))
+            {
+                address = _hex.SelectedAddress;
+            }
+
+            byte val;
+            if (direct)
+            {
+                val = (byte)deltaOrDirect;
+            }
+            else
+            {
+                byte current = _hex.GetByte(address);
+                val = (byte)(current + deltaOrDirect);
+            }
+
+            _editAddressBox.Text = address.ToString("X4");
+            _editByteBox.Text = val.ToString("X2");
+            _hex.SetByteLocal(address, val);
+            UpdateInfo(address, val);
+            ByteWriteRequested?.Invoke(address, val);
+        }
+
+        private void UpdateInfo(ushort address, byte value)
+        {
+            _editAddressBox.Text = address.ToString("X4");
+            _editByteBox.Text = value.ToString("X2");
+            char ascii = value >= 32 && value <= 126 ? (char)value : '.';
+            _infoLabel.Text = $"Ячейка [{address:X4}H]: Значение {value:X2}H (Dec: {value}, ASCII: '{ascii}')";
         }
 
         private void JumpToRegister(string name)

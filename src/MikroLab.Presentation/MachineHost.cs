@@ -849,6 +849,18 @@ namespace MikroLab.Presentation
             });
         }
 
+        public void ClearMemory()
+        {
+            _session.WithMachine(machine =>
+            {
+                for (int address = 0; address < 65536; address++)
+                {
+                    machine.Memory.WriteByte((ushort)address, 0);
+                }
+            });
+            Output?.Invoke("Очистка памяти: все 64 КБ заполнены нулями (00h).", LogLevel.Info);
+        }
+
         private void ApplyBreakpoints()
         {
             var addresses = new List<ushort>();
