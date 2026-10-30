@@ -311,7 +311,11 @@ Linux и macOS. Полная справка — `MikroLab.Cli --help`.
 
 ```text
 MikroLab.Cli assemble <source.asm> [-o <out.hex>] [--listing]
-MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--run-to XXXX] [--log <file.csv|file.md>] [--trace] [--dump]
+MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--profile legacy|newest] [--steps N] [--max-cycles N] [--run-to XXXX] [--log <file.csv|file.md>] [--trace] [--dump]
+MikroLab.Cli lab <1..7>
+MikroLab.Cli lab list
+MikroLab.Cli disasm <file> [--start XXXX] [--length N | --count N]
+MikroLab.Cli info
 MikroLab.Cli step <source|file.bin|file.580> [--count N]
 MikroLab.Cli dump <source|file.bin|file.580> [--start XXXX] [--length N]
 MikroLab.Cli hex <file.hex|file.bin> -o <output> [--start XXXX] [--start-record]
@@ -327,6 +331,14 @@ dotnet run --project src/MikroLab.Cli -- assemble program.asm -o program.hex --l
 
 # выполнить до HLT и вывести память
 dotnet run --project src/MikroLab.Cli -- run program.asm --dump
+
+# выполнить лабораторную работу с автоматической проверкой
+dotnet run --project src/MikroLab.Cli -- lab 1
+dotnet run --project src/MikroLab.Cli -- lab list
+
+# дизассемблировать Intel HEX и показать карту памяти
+dotnet run --project src/MikroLab.Cli -- disasm program.hex --count 20
+dotnet run --project src/MikroLab.Cli -- info
 
 # остановиться перед адресом и записать журнал выполнения
 dotnet run --project src/MikroLab.Cli -- run program.asm --run-to 8010 --log trace.csv

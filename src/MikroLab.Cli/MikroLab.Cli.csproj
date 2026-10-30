@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MikroLab.Core\MikroLab.Core.csproj" />
+    <ProjectReference Include="..\MikroLab.Presentation\MikroLab.Presentation.csproj" />
   </ItemGroup>
 
 </Project>

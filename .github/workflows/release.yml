@@ -19,6 +19,30 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
+  test:
+    name: Build and test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build solution
+        run: dotnet build MikroLab.sln -c Release -v minimal
+
+      - name: Run tests
+        run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
+
+      - name: CLI smoke checks
+        run: |
+          dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
+          dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- lab 1
+          dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- info
+
   studio:
     name: Windows studio
     runs-on: windows-latest
@@ -168,7 +192,7 @@ jobs:
   release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
-    needs: [studio, studio-cross]
+    needs: [test, studio, studio-cross]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -178,6 +202,71 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          cat > release-notes.md <<'NOTES'
+          ## MikroLab {{TAG}} — тестовая версия
+
+          Первый тестовый предрелиз MikroLab с обновлённой консольной средой.
+
+          ### Что нового
+
+          - Команда `lab 1..7` с автоматической проверкой лабораторных работ 1–4.
+          - Команды `disasm` и `info` для дизассемблирования и справки по карте памяти.
+          - Русская справка CLI и единый русский вывод команд.
+          - Выбор профиля процессора: `--profile legacy|newest`.
+          - Windows-сборка MikroLab Studio и кроссплатформенные сборки для Linux/macOS.
+
+          ### Состав релиза
+
+          | Файл | Платформа | Содержимое |
+          | --- | --- | --- |
+          | `MikroLab.exe` | Windows x64 | MikroLab Studio (WinForms), один файл |
+          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), LICENSE, THIRD-PARTY-NOTICES.md, README.md |
+          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), LICENSE, THIRD-PARTY-NOTICES.md, README.md |
+          | `MikroLab-osx-x64.tar.gz` | macOS Intel | MikroLab.app, LICENSE, THIRD-PARTY-NOTICES.md, README.md |
+          | `MikroLab-osx-arm64.tar.gz` | macOS Apple Silicon (M1–M4) | MikroLab.app, LICENSE, THIRD-PARTY-NOTICES.md, README.md |
+
+          ### Быстрый старт
+
+          **Windows:** запустите `MikroLab.exe`.
+
+          **Linux:**
+
+          ```bash
+          tar -xzf MikroLab-linux-x64.tar.gz
+          ./MikroLab
+          ```
+
+          **macOS:**
+
+          ```bash
+          tar -xzf MikroLab-osx-arm64.tar.gz
+          open MikroLab.app
+          ```
+
+          При необходимости снимите карантин: `xattr -d com.apple.quarantine MikroLab.app`.
+
+          ### Ограничения
+
+          - Это тестовая версия (`beta`), возможны ошибки и изменение интерфейса.
+          - CLI не входит в релизные архивы и предназначен для разработки и автоматизации.
+          - На macOS приложение не подписано; для запуска может потребоваться разрешение Gatekeeper.
+
+          ### Проверка
+
+          Перед публикацией выполняются тесты `MikroLab.Tests` и smoke-проверки CLI (`version`, `lab 1`, `info`).
+
+          Лицензия: GNU GPL v3. Исходный код: https://github.com/remageht/MikroLab
+          NOTES
+          sed -i "s/{{TAG}}/$TAG/g" release-notes.md
 
       - name: Upload release assets
         shell: bash
@@ -189,6 +278,13 @@ jobs:
           else
             TAG="${GITHUB_REF_NAME}"
           fi
-          gh release view "$TAG" >/dev/null 2>&1 ||
-            gh release create "$TAG" --title "$TAG" --notes "MikroLab $TAG — studio for Windows, Linux and macOS. Windows: MikroLab.exe. Linux/macOS: self-contained tarballs (macOS contains MikroLab.app). Source and license: https://github.com/remageht/MikroLab/tree/$TAG"
+          PRERELEASE=""
+          case "$TAG" in
+            *-*) PRERELEASE="--prerelease" ;;
+          esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "MikroLab $TAG" --notes-file release-notes.md $PRERELEASE
+          else
+            gh release create "$TAG" --title "MikroLab $TAG" --notes-file release-notes.md $PRERELEASE
+          fi
           gh release upload "$TAG" release-assets/* --clobber

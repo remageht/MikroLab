@@ -29,6 +29,10 @@ jobs:
         run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
       - name: CLI smoke check
         run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
+      - name: CLI lab check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- lab 1
+      - name: CLI info check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- info
 
   cross-platform:
     name: ${{ matrix.os }} (Core + Presentation + Avalonia + CLI + tests)
@@ -56,6 +60,10 @@ jobs:
         run: dotnet run --project tests/MikroLab.Tests/MikroLab.Tests.csproj -c Release --no-build
       - name: CLI smoke check
         run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- version
+      - name: CLI lab check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- lab 1
+      - name: CLI info check
+        run: dotnet run --project src/MikroLab.Cli/MikroLab.Cli.csproj -c Release --no-build -- info
       - name: Screenshot smoke check (Linux)
         if: runner.os == 'Linux'
         run: |

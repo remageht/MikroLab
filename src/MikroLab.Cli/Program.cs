@@ -9,13 +9,15 @@ using MikroLab.Core.Debugging;
 using MikroLab.Core.Formats;
 using MikroLab.Core.Machine;
 using MikroLab.Core.Memory;
+using MikroLab.Presentation;
 
 namespace MikroLab.Cli
 {
     /// <summary>
-    /// Headless, cross-platform companion to the WinForms application. It can
-    /// assemble sources, run or step programs, inspect memory, convert Intel
-    /// HEX and save/load machine state without any desktop dependencies.
+    /// Headless, cross-platform companion to the desktop application. It can
+    /// assemble sources, run or step programs, inspect memory, disassemble
+    /// code, check guided labs, convert Intel HEX and save/load machine state
+    /// without any desktop dependencies.
     /// </summary>
     internal static class Program
     {
@@ -26,11 +28,20 @@ namespace MikroLab.Cli
         {
             try
             {
+                Console.OutputEncoding = Encoding.UTF8;
+            }
+            catch (Exception)
+            {
+                // Перенаправленный вывод может не поддерживать смену кодировки.
+            }
+
+            try
+            {
                 return Run(args);
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine("error: " + ex.Message);
+                Console.Error.WriteLine("Ошибка: " + ex.Message);
                 return 1;
             }
         }
@@ -49,6 +60,13 @@ namespace MikroLab.Cli
                     return AssembleCommand(args);
                 case "run":
                     return RunCommand(args);
+                case "lab":
+                    return LabCommand(args);
+                case "disasm":
+                case "disassemble":
+                    return DisassembleCommand(args);
+                case "info":
+                    return InfoCommand();
                 case "step":
                     return StepCommand(args);
                 case "dump":
@@ -62,7 +80,7 @@ namespace MikroLab.Cli
                     Console.WriteLine("MikroLab.Cli " + ProductVersion());
                     return 0;
                 default:
-                    Console.Error.WriteLine("unknown command: " + args[0]);
+                    Console.Error.WriteLine("Неизвестная команда: " + args[0]);
                     PrintHelp();
                     return 1;
             }
@@ -84,11 +102,13 @@ namespace MikroLab.Cli
             }
 
             int bytes = CountBytes(result);
-            Console.WriteLine("assembled " + bytes + " bytes, " + result.Symbols.Count +
-                " symbols, start " + result.StartAddress.ToString("X4") + "h");
+            Console.WriteLine("Собрано: " + bytes + " байт, символов: " + result.Symbols.Count +
+                ", начало: " + result.StartAddress.ToString("X4") + "h");
 
             if (HasFlag(args, "--listing"))
             {
+                Console.WriteLine();
+                Console.WriteLine("Листинг:");
                 foreach (ListingLine line in result.Listing)
                 {
                     if (!line.HasAddress) continue;
@@ -103,7 +123,7 @@ namespace MikroLab.Cli
                     ? (ushort)(result.EndAddress - 1)
                     : result.StartAddress;
                 IntelHex.Save(output, result.Image, result.StartAddress, end);
-                Console.WriteLine("wrote " + output);
+                Console.WriteLine("Записано: " + output);
             }
 
             return 0;
@@ -111,7 +131,8 @@ namespace MikroLab.Cli
 
         private static int RunCommand(string[] args)
         {
-            LoadedProgram program = LoadProgram(RequireSource(args, 1));
+            CpuProfile profile = GetProfileOption(args);
+            LoadedProgram program = LoadProgram(RequireSource(args, 1), profile);
             int maxSteps = GetIntOption(args, "--steps", 1000000);
             ulong maxCycles = GetULongOption(args, "--max-cycles", 0);
             bool trace = HasFlag(args, "--trace");
@@ -192,20 +213,150 @@ namespace MikroLab.Cli
                     ? ExecutionLogFormat.Markdown
                     : ExecutionLogFormat.Csv;
                 executionLog.Save(logPath, format);
-                Console.WriteLine("wrote " + logPath + " (" + executionLog.Count + " entries)");
+                Console.WriteLine("Записано: " + logPath + " (" + executionLog.Count + " записей)");
             }
 
             if (runTo.HasValue && !reachedTarget)
             {
-                Console.Error.WriteLine("run-to " + runTo.Value.ToString("X4") + "h was not reached");
+                Console.Error.WriteLine("Адрес " + runTo.Value.ToString("X4") + "h не достигнут.");
                 return 1;
             }
             return 0;
         }
 
+        private static int LabCommand(string[] args)
+        {
+            if (args.Length < 2 || IsHelp(args[1]) ||
+                string.Equals(args[1], "list", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[1], "список", StringComparison.OrdinalIgnoreCase))
+            {
+                PrintLabList();
+                return 0;
+            }
+
+            if (!int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) ||
+                number < 1 || number > LabCatalog.All.Length)
+            {
+                Console.Error.WriteLine("Укажите номер лабораторной работы от 1 до " + LabCatalog.All.Length + ".");
+                return 1;
+            }
+
+            LabDefinition lab = LabCatalog.All[number - 1];
+            SampleProgram sample = SampleLibrary.ByName(lab.SampleName);
+            LoadedProgram program = LoadSource(sample.Code, sample.Name, CpuProfile.Extended);
+            int maxSteps = GetIntOption(args, "--steps", 100000);
+
+            int executed = RunUntilHalt(program.Machine, maxSteps);
+            bool halted = program.Machine.State == RunState.Halted;
+
+            Console.WriteLine();
+            Console.WriteLine("Лабораторная работа " + number + ": " + lab.Title);
+            Console.WriteLine(lab.Summary);
+            Console.WriteLine();
+            PrintState(program.Machine, executed, halted);
+
+            MachineSnapshot snapshot = program.Machine.Capture();
+            LabCheckResult check = LabCheck.Evaluate(lab, snapshot);
+
+            Console.WriteLine();
+            Console.WriteLine("Проверка: " + check.Summary);
+            foreach (string detail in check.Details)
+            {
+                Console.WriteLine("  " + detail);
+            }
+
+            if (!check.IsDefined)
+            {
+                Console.WriteLine("  Интерактивная работа: запустите её в MikroLab Studio и проверьте результат вручную.");
+                return 0;
+            }
+
+            if (!halted)
+            {
+                Console.Error.WriteLine("  Программа не остановилась за " + maxSteps + " шагов.");
+                return 1;
+            }
+
+            return check.Passed ? 0 : 1;
+        }
+
+        private static int DisassembleCommand(string[] args)
+        {
+            string path = RequireSource(args, 1);
+            byte[] memory = LoadMemoryImage(path, out ushort start);
+
+            ushort? selectedStart = GetAddressOption(args, "--start");
+            if (selectedStart.HasValue)
+            {
+                start = selectedStart.Value;
+            }
+
+            int? length = null;
+            string lengthText = GetOption(args, "--length");
+            if (lengthText != null)
+            {
+                if (!int.TryParse(lengthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedLength) ||
+                    parsedLength < 0)
+                {
+                    throw new ArgumentException("--length требует неотрицательное целое число.");
+                }
+                length = parsedLength;
+            }
+
+            int count = Math.Max(1, GetIntOption(args, "--count", 32));
+            int address = start;
+            int printed = 0;
+            int end = length.HasValue ? Math.Min(0x10000, start + length.Value) : 0x10000;
+
+            while (address < end && (length.HasValue || printed < count))
+            {
+                DisassembledInstruction instruction = I8080Disassembler.Decode(memory, (ushort)address);
+                Console.WriteLine(address.ToString("X4") + "h  " +
+                    instruction.BytesText.PadRight(8) + "  " + instruction.Text);
+                address += instruction.Length;
+                printed++;
+            }
+
+            return 0;
+        }
+
+        private static int InfoCommand()
+        {
+            Console.WriteLine("=================================================================");
+            Console.WriteLine(" MikroLab CLI — эмулятор КР580ВМ80А / Intel 8080");
+            Console.WriteLine(" Кроссплатформенная консольная среда (Windows, Linux, macOS)");
+            Console.WriteLine("=================================================================");
+            Console.WriteLine();
+            Console.WriteLine("Карта адресного пространства памяти:");
+            Console.WriteLine("  0000h - 07FFh  ПЗУ монитора стенда (2 КБ)");
+            Console.WriteLine("  0100h          Точка входа SEGGG (вывод на 7-сегментные индикаторы)");
+            Console.WriteLine("  0300h          Точка входа Sound (генерация звукового сигнала)");
+            Console.WriteLine("  0400h          Точка входа Delay (программная задержка)");
+            Console.WriteLine("  8000h - 83C6h  ОЗУ пользователя (базовый адрес загрузки программ 8000h)");
+            Console.WriteLine("  83E4h - 83EBh  Буфер регистров монитора при останове:");
+            Console.WriteLine("                 83E4h=L, 83E5h=H, 83E6h=E, 83E7h=D, 83E8h=C, 83E9h=B, 83EAh=PSW, 83EBh=A");
+            Console.WriteLine("  83F8h - 83FFh  Регистры 8-разрядного 7-сегментного дисплея");
+            Console.WriteLine();
+            Console.WriteLine("Порты ввода-вывода (микросхема КР580ВВ55А / i8255 PPI):");
+            Console.WriteLine("  Порт FBh       Регистр управляющего слова (РУС)");
+            Console.WriteLine("  Порт FAh       Порт ввода состояния тумблеров (SA1..SA3)");
+            Console.WriteLine("  Порт F9h       Порт вывода на светодиодные лампы (HL1..HL8)");
+            Console.WriteLine("  Порт F8h       Порт C (матричная клавиатура 4x4)");
+            Console.WriteLine();
+            Console.WriteLine("Профили выполнения:");
+            Console.WriteLine("  Legacy         Историческое поведение стенда: буфер регистров, особенности микрокода.");
+            Console.WriteLine("  Extended       Полный набор инструкций i8080, аппаратный стек, точные флаги.");
+            Console.WriteLine("                 В командах CLI профиль extended также называется newest.");
+            Console.WriteLine();
+            Console.WriteLine("Команды: run, lab 1.." + LabCatalog.All.Length + ", assemble, disasm, info, step, dump, hex, state.");
+            Console.WriteLine("Подробная справка: MikroLab.Cli help");
+            return 0;
+        }
+
         private static int StepCommand(string[] args)
         {
-            LoadedProgram program = LoadProgram(RequireSource(args, 1));
+            CpuProfile profile = GetProfileOption(args);
+            LoadedProgram program = LoadProgram(RequireSource(args, 1), profile);
             int count = Math.Max(1, GetIntOption(args, "--count", 1));
 
             for (int i = 0; i < count; i++)
@@ -226,10 +377,11 @@ namespace MikroLab.Cli
 
         private static int DumpCommand(string[] args)
         {
-            LoadedProgram program = LoadProgram(RequireSource(args, 1));
+            CpuProfile profile = GetProfileOption(args);
+            LoadedProgram program = LoadProgram(RequireSource(args, 1), profile);
             ushort start = ParseAddress(GetOption(args, "--start") ?? "8000");
             int length = GetIntOption(args, "--length", 256);
-            if (length < 0) throw new ArgumentException("--length must be non-negative");
+            if (length < 0) throw new ArgumentException("--length требует неотрицательное целое число.");
             length = Math.Min(length, 0x10000 - start);
             PrintDump(program.Machine.Memory.Capture(), start, length);
             return 0;
@@ -240,14 +392,14 @@ namespace MikroLab.Cli
             string input = RequireSource(args, 1);
             string output = GetOption(args, "-o") ?? GetOption(args, "--output");
             if (string.IsNullOrEmpty(output))
-                throw new ArgumentException("hex requires -o <output>");
+                throw new ArgumentException("hex требует -o <файл>");
 
             string extension = Path.GetExtension(input).ToLowerInvariant();
             if (extension == ".hex" || extension == ".ihx")
             {
                 IntelHexImage image = IntelHex.Load(input);
                 if (image.ByteCount == 0)
-                    throw new InvalidDataException("Intel HEX file contains no data");
+                    throw new InvalidDataException("Файл Intel HEX не содержит данных.");
 
                 int first = 0x10000;
                 int last = -1;
@@ -261,7 +413,7 @@ namespace MikroLab.Cli
                 int baseAddress = selectedStart != null ? ParseAddress(selectedStart) : first;
                 if (baseAddress > first)
                     throw new ArgumentException("--start " + baseAddress.ToString("X4") +
-                        "h is above the first loaded byte at " + first.ToString("X4") + "h");
+                        "h выше первого загруженного байта " + first.ToString("X4") + "h.");
 
                 var binary = new byte[last - baseAddress + 1];
                 foreach (IntelHexSegment segment in image.Segments)
@@ -271,8 +423,8 @@ namespace MikroLab.Cli
                 }
 
                 File.WriteAllBytes(output, binary);
-                Console.WriteLine("wrote " + output + " (" + binary.Length + " bytes, " +
-                    image.ByteCount + " loaded, " + baseAddress.ToString("X4") + "h–" +
+                Console.WriteLine("Записано: " + output + " (" + binary.Length + " байт, " +
+                    image.ByteCount + " загружено, " + baseAddress.ToString("X4") + "h–" +
                     last.ToString("X4") + "h)");
                 return 0;
             }
@@ -283,20 +435,19 @@ namespace MikroLab.Cli
             ushort start = ParseAddress(startOption);
             if (!explicitStart && data.Length == 0x10000)
             {
-                // A full 64 KiB image (for example, produced from Intel HEX)
-                // already covers the whole address space.
+                // Полный образ 64 КБ уже покрывает всё адресное пространство.
                 start = 0;
             }
             if ((int)start + data.Length > 0x10000)
-                throw new ArgumentException("binary does not fit into 64K at " + start.ToString("X4") + "h");
+                throw new ArgumentException("Двоичный файл не помещается в 64 КБ по адресу " + start.ToString("X4") + "h.");
             if (data.Length == 0)
-                throw new ArgumentException("input file is empty");
+                throw new ArgumentException("Входной файл пуст.");
 
             var memory = new byte[0x10000];
             Array.Copy(data, 0, memory, start, data.Length);
             ushort end = (ushort)(start + data.Length - 1);
             IntelHex.Save(output, memory, start, end, HasFlag(args, "--start-record"));
-            Console.WriteLine("wrote " + output + " (" + data.Length + " bytes at " +
+            Console.WriteLine("Записано: " + output + " (" + data.Length + " байт по адресу " +
                 start.ToString("X4") + "h)");
             return 0;
         }
@@ -304,15 +455,16 @@ namespace MikroLab.Cli
         private static int StateCommand(string[] args)
         {
             if (args.Length < 2)
-                throw new ArgumentException("state requires save or load");
+                throw new ArgumentException("state требует save или load.");
 
             string action = args[1].ToLowerInvariant();
             if (action == "save")
             {
-                LoadedProgram program = LoadProgram(RequireSource(args, 2));
+                CpuProfile profile = GetProfileOption(args);
+                LoadedProgram program = LoadProgram(RequireSource(args, 2), profile);
                 string output = GetOption(args, "-o") ?? GetOption(args, "--output");
                 if (string.IsNullOrEmpty(output))
-                    throw new ArgumentException("state save requires -o <output>");
+                    throw new ArgumentException("state save требует -o <файл>.");
 
                 int steps = GetIntOption(args, "--steps", 0);
                 ExecuteSteps(program.Machine, steps);
@@ -321,14 +473,14 @@ namespace MikroLab.Cli
                 {
                     MachineSnapshot snapshot = program.Machine.Capture();
                     Kr580Image.FromSnapshot(snapshot).Save(output);
-                    Console.WriteLine("wrote " + output + " (.580, PC=" +
+                    Console.WriteLine("Записано: " + output + " (.580, PC=" +
                         snapshot.PC.ToString("X4") + "h, SP=" + snapshot.SP.ToString("X4") + "h)");
                 }
                 else
                 {
                     MachineStateSerializer.Save(output, program.Machine.Capture(),
                         program.ProgramLoaded, program.EntryPoint);
-                    Console.WriteLine("wrote " + output + " at PC=" +
+                    Console.WriteLine("Записано: " + output + " при PC=" +
                         program.Machine.Cpu.State.PC.ToString("X4") + "h");
                 }
                 return 0;
@@ -337,7 +489,8 @@ namespace MikroLab.Cli
             if (action == "load")
             {
                 string input = RequireSource(args, 2);
-                var machine = CreateMachine();
+                CpuProfile profile = GetProfileOption(args);
+                var machine = CreateMachine(profile);
                 if (Is580(input))
                 {
                     machine.Restore(Kr580Image.Load(input).ToSnapshot());
@@ -358,7 +511,7 @@ namespace MikroLab.Cli
                 return 0;
             }
 
-            throw new ArgumentException("state requires save or load");
+            throw new ArgumentException("state требует save или load.");
         }
 
         // ------------------------------------------------------------------ loading
@@ -377,13 +530,13 @@ namespace MikroLab.Cli
             }
         }
 
-        private static LoadedProgram LoadProgram(string path)
+        private static LoadedProgram LoadProgram(string path, CpuProfile profile)
         {
             string extension = Path.GetExtension(path).ToLowerInvariant();
             if (extension == ".json" || extension == ".mstate")
             {
                 MachineStateFile state = MachineStateSerializer.Load(path);
-                var machine = CreateMachine();
+                var machine = CreateMachine(profile);
                 machine.Restore(state.Snapshot);
                 return new LoadedProgram(machine, state.ProgramLoaded, state.EntryPoint);
             }
@@ -391,7 +544,7 @@ namespace MikroLab.Cli
             if (extension == ".580")
             {
                 Kr580Image image = Kr580Image.Load(path);
-                var machine = CreateMachine();
+                var machine = CreateMachine(profile);
                 machine.Restore(image.ToSnapshot());
                 machine.State = RunState.Stopped;
                 return new LoadedProgram(machine, true, image.PC);
@@ -401,13 +554,13 @@ namespace MikroLab.Cli
             {
                 byte[] data = File.ReadAllBytes(path);
                 if (data.Length == 0)
-                    throw new InvalidDataException("binary file is empty");
+                    throw new InvalidDataException("Двоичный файл пуст.");
                 int start = data.Length == MemoryMap.MemSize ? 0 : DefaultOrigin;
                 if (start + data.Length > MemoryMap.MemSize)
-                    throw new InvalidDataException("binary does not fit into 64K at " +
-                        start.ToString("X4") + "h");
+                    throw new InvalidDataException("Двоичный файл не помещается в 64 КБ по адресу " +
+                        start.ToString("X4") + "h.");
 
-                var machine = CreateMachine();
+                var machine = CreateMachine(profile);
                 machine.Reset(ResetKind.Soft);
                 ClearMemory(machine);
                 for (int i = 0; i < data.Length; i++)
@@ -424,8 +577,8 @@ namespace MikroLab.Cli
             {
                 IntelHexImage image = IntelHex.Load(path);
                 if (image.ByteCount == 0)
-                    throw new InvalidDataException("Intel HEX file contains no data");
-                var machine = CreateMachine();
+                    throw new InvalidDataException("Файл Intel HEX не содержит данных.");
+                var machine = CreateMachine(profile);
                 machine.Reset(ResetKind.Soft);
                 ClearMemory(machine);
                 foreach (IntelHexSegment segment in image.Segments)
@@ -443,14 +596,20 @@ namespace MikroLab.Cli
             }
 
             string source = File.ReadAllText(path);
+            return LoadSource(source, path, profile);
+        }
+
+        private static LoadedProgram LoadSource(string source, string displayName, CpuProfile profile)
+        {
             AssembleResult result = I8080Assembler.Assemble(source, DefaultOrigin);
             if (!result.Success)
             {
                 PrintAssemblerErrors(result);
-                throw new InvalidOperationException("assembly failed with " + result.Errors.Count + " error(s)");
+                throw new InvalidOperationException("Не удалось собрать " + displayName +
+                    ": ошибок " + result.Errors.Count + ".");
             }
 
-            var assembled = CreateMachine();
+            var assembled = CreateMachine(profile);
             assembled.Reset(ResetKind.Soft);
             for (int address = 0x8000; address <= 0x83FF; address++)
             {
@@ -469,9 +628,84 @@ namespace MikroLab.Cli
             return new LoadedProgram(assembled, true, result.StartAddress);
         }
 
-        private static Machine CreateMachine()
+        private static byte[] LoadMemoryImage(string path, out ushort start)
         {
-            return new Machine(profile: CpuProfile.Extended);
+            string extension = Path.GetExtension(path).ToLowerInvariant();
+            var memory = new byte[MemoryMap.MemSize];
+            start = DefaultOrigin;
+
+            if (extension == ".hex" || extension == ".ihx")
+            {
+                IntelHexImage image = IntelHex.Load(path);
+                if (image.ByteCount == 0)
+                    throw new InvalidDataException("Файл Intel HEX не содержит данных.");
+                start = image.StartAddress ?? FirstSegmentAddress(image);
+                foreach (IntelHexSegment segment in image.Segments)
+                {
+                    Array.Copy(segment.Data, 0, memory, segment.Address, segment.Length);
+                }
+                return memory;
+            }
+
+            if (extension == ".580")
+            {
+                MachineSnapshot snapshot = Kr580Image.Load(path).ToSnapshot();
+                if (snapshot.Memory != null)
+                    Array.Copy(snapshot.Memory, memory, Math.Min(snapshot.Memory.Length, memory.Length));
+                start = snapshot.PC;
+                return memory;
+            }
+
+            if (extension == ".json" || extension == ".mstate")
+            {
+                MachineStateFile state = MachineStateSerializer.Load(path);
+                if (state.Snapshot.Memory != null)
+                    Array.Copy(state.Snapshot.Memory, memory, Math.Min(state.Snapshot.Memory.Length, memory.Length));
+                start = state.Snapshot.PC;
+                return memory;
+            }
+
+            if (extension == ".bin")
+            {
+                byte[] data = File.ReadAllBytes(path);
+                if (data.Length == 0)
+                    throw new InvalidDataException("Двоичный файл пуст.");
+                start = data.Length == MemoryMap.MemSize ? (ushort)0 : DefaultOrigin;
+                if (start + data.Length > MemoryMap.MemSize)
+                    throw new InvalidDataException("Двоичный файл не помещается в 64 КБ.");
+                Array.Copy(data, 0, memory, start, data.Length);
+                return memory;
+            }
+
+            string source = File.ReadAllText(path);
+            AssembleResult result = I8080Assembler.Assemble(source, DefaultOrigin);
+            if (!result.Success)
+            {
+                PrintAssemblerErrors(result);
+                throw new InvalidOperationException("Не удалось собрать " + path +
+                    ": ошибок " + result.Errors.Count + ".");
+            }
+            foreach (AssembledChunk chunk in result.Chunks)
+            {
+                Array.Copy(chunk.Data, 0, memory, chunk.Address, chunk.Data.Length);
+            }
+            start = result.StartAddress;
+            return memory;
+        }
+
+        private static ushort FirstSegmentAddress(IntelHexImage image)
+        {
+            ushort first = 0xFFFF;
+            foreach (IntelHexSegment segment in image.Segments)
+            {
+                if (segment.Address < first) first = (ushort)segment.Address;
+            }
+            return first == 0xFFFF ? DefaultOrigin : first;
+        }
+
+        private static Machine CreateMachine(CpuProfile profile)
+        {
+            return new Machine(profile: profile);
         }
 
         private static void ClearMemory(Machine machine)
@@ -494,13 +728,26 @@ namespace MikroLab.Cli
             machine.State = RunState.Paused;
         }
 
+        private static int RunUntilHalt(Machine machine, int maxSteps)
+        {
+            int executed = 0;
+            machine.State = RunState.Running;
+            while (executed < maxSteps)
+            {
+                bool ok = machine.Step();
+                executed++;
+                if (!ok) break;
+            }
+            return executed;
+        }
+
         // ------------------------------------------------------------------ output
 
         private static void PrintAssemblerErrors(AssembleResult result)
         {
             foreach (AssemblerError error in result.Errors)
             {
-                Console.Error.WriteLine("line " + error.LineNumber + ": " + error.Message);
+                Console.Error.WriteLine("строка " + error.LineNumber + ": " + error.Message);
             }
         }
 
@@ -508,14 +755,25 @@ namespace MikroLab.Cli
         {
             CpuState state = machine.Cpu.State;
             Console.WriteLine(
-                "state=" + machine.State +
-                " halted=" + (halted ? "yes" : "no") +
-                " steps=" + executed +
-                " PC=" + state.PC.ToString("X4") + "h" +
-                " SP=" + state.SP.ToString("X4") + "h" +
-                " A=" + state.A.ToString("X2") + "h" +
-                " F=" + state.Flags.ToByte().ToString("X2") + "h" +
-                " cycles=" + state.Cycles);
+                "Состояние: " + StateText(machine.State) +
+                "  останов: " + (halted ? "да" : "нет") +
+                "  шагов: " + executed +
+                "  PC=" + state.PC.ToString("X4") + "h" +
+                "  SP=" + state.SP.ToString("X4") + "h" +
+                "  A=" + state.A.ToString("X2") + "h" +
+                "  F=" + state.Flags.ToByte().ToString("X2") + "h" +
+                "  тактов: " + state.Cycles);
+        }
+
+        private static string StateText(RunState state)
+        {
+            switch (state)
+            {
+                case RunState.Running: return "выполняется";
+                case RunState.Paused: return "пауза";
+                case RunState.Halted: return "остановлен по HLT";
+                default: return "остановлен";
+            }
         }
 
         private static void PrintDump(byte[] memory, ushort start, int length)
@@ -552,22 +810,70 @@ namespace MikroLab.Cli
 
         private static void PrintHelp()
         {
-            Console.WriteLine("MikroLab.Cli — headless KR580VM80A / Intel 8080 toolkit");
+            Console.WriteLine("=================================================================");
+            Console.WriteLine(" MikroLab CLI — КР580ВМ80А / Intel 8080 Эмулятор");
+            Console.WriteLine(" Кроссплатформенная консольная среда (Windows, Linux, macOS)");
+            Console.WriteLine("=================================================================");
             Console.WriteLine();
-            Console.WriteLine("usage:");
-            Console.WriteLine("  MikroLab.Cli assemble <source.asm> [-o <out.hex>] [--listing]");
-            Console.WriteLine("  MikroLab.Cli run <source.asm|file.hex|file.bin|file.580|state.json> [--steps N] [--max-cycles N] [--run-to XXXX] [--log <file.csv|file.md>] [--trace] [--dump]");
-            Console.WriteLine("  MikroLab.Cli step <source|file.bin|file.580> [--count N]");
-            Console.WriteLine("  MikroLab.Cli dump <source|file.bin|file.580> [--start XXXX] [--length N]");
-            Console.WriteLine("  MikroLab.Cli hex <file.hex|file.bin> -o <output> [--start XXXX] [--start-record]");
-            Console.WriteLine("  MikroLab.Cli state save <source> -o <state.json|state.580> [--steps N]");
-            Console.WriteLine("  MikroLab.Cli state load <state.json|state.580> [--steps N] [--dump]");
+            Console.WriteLine("Использование: MikroLab.Cli <команда> [параметры]");
             Console.WriteLine();
-            Console.WriteLine("Programs assembled without ORG start at 8000h. Intel HEX import");
-            Console.WriteLine("clears the 64K memory image; state files store the full machine,");
-            Console.WriteLine("including memory, devices, flags, call stack and HLT state.");
-            Console.WriteLine(".580 files use the original 65,549-byte KP580 layout: 64K RAM,");
-            Console.WriteLine("A B C D E H L W Z, little-endian PC and SP (no flags).");
+            Console.WriteLine("Команды:");
+            Console.WriteLine("  run <файл.asm|файл.hex|файл.bin|файл.580|state.json>");
+            Console.WriteLine("                            Собрать и выполнить программу");
+            Console.WriteLine("  lab <1.." + LabCatalog.All.Length + ">              Выполнить и проверить лабораторную работу");
+            Console.WriteLine("  lab list                  Показать список лабораторных работ");
+            Console.WriteLine("  assemble <файл.asm>       Собрать ассемблерный файл в Intel HEX");
+            Console.WriteLine("                            Параметры: [-o out.hex] [--listing]");
+            Console.WriteLine("  disasm <файл>             Дизассемблировать код");
+            Console.WriteLine("                            Параметры: [--start XXXX] [--length N | --count N]");
+            Console.WriteLine("  info                      Карта памяти, порты и профили процессора");
+            Console.WriteLine("  step <файл>               Выполнить одну или несколько инструкций");
+            Console.WriteLine("                            Параметры: [--count N]");
+            Console.WriteLine("  dump <файл>               Вывести дамп памяти");
+            Console.WriteLine("                            Параметры: [--start XXXX] [--length N]");
+            Console.WriteLine("  hex <файл.hex|файл.bin> -o <файл>");
+            Console.WriteLine("                            Конвертировать Intel HEX <-> BIN");
+            Console.WriteLine("  state save <файл> -o <файл.json|файл.580> [--steps N]");
+            Console.WriteLine("  state load <файл.json|файл.580> [--steps N] [--dump]");
+            Console.WriteLine("  version                   Показать версию");
+            Console.WriteLine("  help                      Вывести эту справку");
+            Console.WriteLine();
+            Console.WriteLine("Параметры команды run:");
+            Console.WriteLine("  --profile legacy|newest   Профиль процессора (по умолчанию: newest)");
+            Console.WriteLine("  --steps <N>               Максимальное число шагов (по умолчанию: 1000000)");
+            Console.WriteLine("  --max-cycles <N>          Остановиться после N тактов");
+            Console.WriteLine("  --run-to <XXXXh>          Остановиться на указанном адресе");
+            Console.WriteLine("  --log <файл.csv|файл.md>  Сохранить журнал выполнения");
+            Console.WriteLine("  --trace                   Пошаговый вывод инструкций");
+            Console.WriteLine("  --dump                    Вывести дамп памяти после останова");
+            Console.WriteLine();
+            Console.WriteLine("Примеры:");
+            Console.WriteLine("  MikroLab.Cli lab 1                 Проверить лабораторную работу №1");
+            Console.WriteLine("  MikroLab.Cli lab list              Список всех лабораторных работ");
+            Console.WriteLine("  MikroLab.Cli run program.asm --dump");
+            Console.WriteLine("  MikroLab.Cli disasm program.hex --count 20");
+            Console.WriteLine("  MikroLab.Cli info                  Справка по карте памяти и портам");
+            Console.WriteLine();
+            Console.WriteLine("Программы без ORG загружаются по адресу 8000h. Импорт Intel HEX");
+            Console.WriteLine("очищает образ памяти 64 КБ; файлы состояния хранят машину целиком,");
+            Console.WriteLine("включая память, устройства, флаги, стек вызовов и состояние HLT.");
+            Console.WriteLine("Файлы .580 используют исходный формат КР580 объёмом 65 549 байт:");
+            Console.WriteLine("64 КБ ОЗУ, A B C D E H L W Z, PC и SP (без флагов).");
+        }
+
+        private static void PrintLabList()
+        {
+            Console.WriteLine("Лабораторные работы MikroLab:");
+            Console.WriteLine();
+            foreach (LabDefinition lab in LabCatalog.All)
+            {
+                Console.WriteLine("  " + lab.Number + " — " + lab.Title);
+                Console.WriteLine("      " + lab.Summary);
+            }
+            Console.WriteLine();
+            Console.WriteLine("Запуск: MikroLab.Cli lab <номер>");
+            Console.WriteLine("Работы 1–4 проверяются автоматически, работы 5–" + LabCatalog.All.Length +
+                " интерактивные.");
         }
 
         // ------------------------------------------------------------------ options
@@ -582,10 +888,24 @@ namespace MikroLab.Cli
             return string.Equals(Path.GetExtension(path), ".580", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static CpuProfile GetProfileOption(string[] args)
+        {
+            string text = GetOption(args, "--profile");
+            if (string.IsNullOrEmpty(text)) return CpuProfile.Extended;
+
+            if (string.Equals(text, "legacy", StringComparison.OrdinalIgnoreCase))
+                return CpuProfile.Legacy;
+            if (string.Equals(text, "extended", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(text, "newest", StringComparison.OrdinalIgnoreCase))
+                return CpuProfile.Extended;
+
+            throw new ArgumentException("--profile принимает legacy или newest.");
+        }
+
         private static string RequireSource(string[] args, int index)
         {
             if (args.Length <= index || string.IsNullOrWhiteSpace(args[index]))
-                throw new ArgumentException("missing source path");
+                throw new ArgumentException("Не указан путь к файлу.");
             return args[index];
         }
 
@@ -620,7 +940,7 @@ namespace MikroLab.Cli
             string text = GetOption(args, name);
             if (text == null) return fallback;
             if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
-                throw new ArgumentException(name + " expects an integer");
+                throw new ArgumentException(name + " требует целое число.");
             return value;
         }
 
@@ -629,7 +949,7 @@ namespace MikroLab.Cli
             string text = GetOption(args, name);
             if (text == null) return fallback;
             if (!ulong.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong value))
-                throw new ArgumentException(name + " expects a non-negative integer");
+                throw new ArgumentException(name + " требует неотрицательное целое число.");
             return value;
         }
 
@@ -640,7 +960,7 @@ namespace MikroLab.Cli
                 value = value.Substring(2);
             value = value.TrimEnd('h', 'H');
             if (!ushort.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ushort address))
-                throw new ArgumentException("invalid hexadecimal address: " + text);
+                throw new ArgumentException("Некорректный шестнадцатеричный адрес: " + text);
             return address;
         }
 
