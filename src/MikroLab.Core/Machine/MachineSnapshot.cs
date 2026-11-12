@@ -24,8 +24,22 @@ namespace MikroLab.Core.Machine
         public FlagReg Flags { get; init; }
         public int CallStackDepth { get; init; }
 
-        /// <summary>Debug call stack, top first. Empty for legacy snapshots.</summary>
+        /// <summary>Debug call stack (return addresses), top first.</summary>
         public ushort[] CallStack { get; init; } = Array.Empty<ushort>();
+
+        /// <summary>
+        /// CPU profile the snapshot was taken under. Null for older state files
+        /// and .580 images, which do not record a profile; restoring those keeps
+        /// the current CPU.
+        /// </summary>
+        public CpuProfile? Profile { get; init; }
+
+        /// <summary>
+        /// Full Legacy call frames (register snapshot + flags + return address),
+        /// top first. Legacy keeps returns in a software stack rather than memory,
+        /// so these are required to resume a Legacy program mid-CALL.
+        /// </summary>
+        public LegacyCallFrame[] LegacyCallStack { get; init; }
 
         /// <summary>True when the CPU is latched on HLT.</summary>
         public bool Halted { get; init; }
@@ -74,5 +88,16 @@ namespace MikroLab.Core.Machine
         // Machine
         public RunState State { get; init; }
         public byte[] Memory { get; init; }
+    }
+
+    /// <summary>
+    /// One Legacy software-stack frame. Mirrors <c>LegacyCpu.CallStackElement</c>
+    /// in a serializable form so a saved Legacy program can resume inside a CALL.
+    /// </summary>
+    public sealed class LegacyCallFrame
+    {
+        public ushort[] Regs { get; set; } = new ushort[8];
+        public FlagReg Flags { get; set; }
+        public ushort RetAddress { get; set; }
     }
 }

@@ -143,7 +143,6 @@ namespace MikroLab.Core.Machine
                 return;
             }
 
-            CpuState oldState = Cpu?.State;
             if (profile == CpuProfile.Extended)
             {
                 Cpu = new ExtendedCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
@@ -153,13 +152,13 @@ namespace MikroLab.Core.Machine
                 Cpu = new LegacyCpu(AddressSpace, IoBus, Sound, Clock, Diagnostics);
             }
 
-            if (oldState != null)
-            {
-                Cpu.State.PC = oldState.PC;
-                Cpu.State.SP = oldState.SP;
-                Cpu.State.Flags = oldState.Flags;
-                Cpu.State.Cycles = oldState.Cycles;
-            }
+            // Legacy keeps return addresses (and register snapshots) in a private
+            // software stack, Extended in the hardware stack, so an in-flight CALL
+            // cannot be carried across models. Reset the execution context rather
+            // than resume mid-call with a mismatched stack. Memory and the register
+            // file (both memory-backed) survive; the host restores PC/SP.
+            Cpu.Reset();
+            State = RunState.Stopped;
         }
 
         public MachineSnapshot Capture()
@@ -174,6 +173,22 @@ namespace MikroLab.Core.Machine
 
             bool halted = State == RunState.Halted ||
                 (Cpu is ExtendedCpu extended && extended.IsHalted);
+
+            LegacyCallFrame[] legacyFrames = null;
+            if (Cpu is LegacyCpu legacyCpu)
+            {
+                legacyFrames = new LegacyCallFrame[legacyCpu.CallStack.Count];
+                int f = 0;
+                foreach (LegacyCpu.CallStackElement element in legacyCpu.CallStack)
+                {
+                    legacyFrames[f++] = new LegacyCallFrame
+                    {
+                        Regs = (ushort[])element.Regs.Clone(),
+                        Flags = element.FlagReg,
+                        RetAddress = (ushort)element.RetAddress
+                    };
+                }
+            }
 
             Ppi.RefreshKeyboard();
 
@@ -194,6 +209,8 @@ namespace MikroLab.Core.Machine
                 Flags = cpuState.Flags,
                 CallStackDepth = Cpu.CallStackDepth,
                 CallStack = callStack,
+                Profile = Cpu.Profile,
+                LegacyCallStack = legacyFrames,
                 Halted = halted,
 
                 PpiPortA = Ppi.PortA,
@@ -227,6 +244,14 @@ namespace MikroLab.Core.Machine
         public void Restore(MachineSnapshot snapshot)
         {
             if (snapshot == null) return;
+
+            // Restore the CPU model the state was saved under. Older files and
+            // .580 images carry no profile, so they keep the current CPU.
+            if (snapshot.Profile.HasValue && Cpu.Profile != snapshot.Profile.Value)
+            {
+                SwitchProfile(snapshot.Profile.Value);
+            }
+
             if (snapshot.Memory != null)
                 Memory.Restore(snapshot.Memory);
 
@@ -269,6 +294,25 @@ namespace MikroLab.Core.Machine
             if (Cpu is ExtendedCpu extended)
             {
                 extended.RestoreDebugState(snapshot.CallStack, snapshot.Halted);
+            }
+            else if (Cpu is LegacyCpu legacy)
+            {
+                // Legacy returns live in a software stack (with register snapshots),
+                // not in memory, so rebuild the frames top-first from the saved array.
+                legacy.CallStack.Clear();
+                if (snapshot.LegacyCallStack != null)
+                {
+                    for (int i = snapshot.LegacyCallStack.Length - 1; i >= 0; i--)
+                    {
+                        LegacyCallFrame frame = snapshot.LegacyCallStack[i];
+                        legacy.CallStack.Push(new LegacyCpu.CallStackElement
+                        {
+                            FlagReg = frame.Flags,
+                            RetAddress = frame.RetAddress,
+                            Regs = frame.Regs != null ? (ushort[])frame.Regs.Clone() : new ushort[8]
+                        });
+                    }
+                }
             }
 
             // A loaded snapshot has no execution thread behind it. Never report

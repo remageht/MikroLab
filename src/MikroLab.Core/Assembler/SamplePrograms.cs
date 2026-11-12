@@ -149,9 +149,9 @@ LOOP:   IN 0FAh           ; SA1..SA3 → A
         MVI C, 33h
         MVI D, 44h
         MVI E, 55h
-        MVI H, 80h
+        MVI H, 82h
         MVI L, 00h
-        MOV M, A          ; 8000h ← A
+        MOV M, A          ; 8200h ← A (ячейка данных, не код)
 
         MVI A, 00h
         MOV A, B
@@ -160,7 +160,7 @@ LOOP:   IN 0FAh           ; SA1..SA3 → A
         MOV D, E
 
         STA 8201h         ; сохранить A
-        MOV A, M          ; A ← 8000h
+        MOV A, M          ; A ← 8200h
         STA 8202h
         HLT
 

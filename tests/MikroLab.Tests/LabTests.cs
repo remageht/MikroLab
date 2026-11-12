@@ -28,6 +28,8 @@ namespace MikroLab.Tests
             Test_InteractiveLabs_HaveNoReference();
             Test_Check_ReportsMismatch();
             Test_Lab1_RegisterExpectation();
+            Test_Lab1_SurvivesResetWithoutReassemble();
+            Test_Lab3_RequiresExtendedProfile();
 
             Console.WriteLine($"  All LabTests PASSED ({_passed} tests).\n");
         }
@@ -146,6 +148,85 @@ namespace MikroLab.Tests
             Pass("lab 1 reference matches the register sample");
         }
 
+        private static void Test_Lab1_SurvivesResetWithoutReassemble()
+        {
+            SampleProgram sample = FindSample(LabCatalog.All[0].SampleName);
+            Assert(sample != null, "lab 1 sample must exist");
+
+            AssembleResult result = I8080Assembler.Assemble(sample.Code, 0x8000);
+            Assert(result.Success, "lab 1 sample must assemble");
+
+            var machine = new Machine(profile: CpuProfile.Extended);
+            for (int address = 0x8000; address <= 0x83FF; address++)
+            {
+                machine.Memory.WriteByte((ushort)address, 0);
+            }
+            foreach (AssembledChunk chunk in result.Chunks)
+            {
+                for (int i = 0; i < chunk.Data.Length; i++)
+                {
+                    machine.Memory.WriteByte((ushort)(chunk.Address + i), chunk.Data[i]);
+                }
+            }
+            machine.Cpu.State.PC = result.StartAddress;
+            machine.Cpu.State.SP = 0x83F0;
+
+            using var session = new MachineSession(machine);
+            session.ThrottleLikeOriginal = false;
+            session.InstructionsPerSlice = 500;
+
+            // The sample must not write into its own code, otherwise a soft
+            // reset (which does not reassemble) would execute corrupted bytes.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                if (pass > 0)
+                {
+                    // Mimic MachineHost.Reset: soft reset, then restore the
+                    // profile entry point and stack without reassembling.
+                    session.Reset(ResetKind.Soft);
+                    machine.Cpu.State.PC = result.StartAddress;
+                    machine.Cpu.State.SP = 0x83F0;
+                }
+
+                session.Run();
+                var watch = Stopwatch.StartNew();
+                while (session.State != RunState.Halted && watch.ElapsedMilliseconds < 3000)
+                {
+                    Thread.Sleep(1);
+                }
+
+                Assert(session.State == RunState.Halted, "lab 1 must halt on pass " + (pass + 1));
+                MachineSnapshot snapshot = session.CaptureSnapshot();
+                Assert(snapshot.A == 0x11, "lab 1 A=11h must survive reset, pass " + (pass + 1));
+                Assert(snapshot.Memory[0x8201] == 0x22, "lab 1 [8201h]=22h must survive reset, pass " + (pass + 1));
+                Assert(snapshot.Memory[0x8202] == 0x11, "lab 1 [8202h]=11h must survive reset, pass " + (pass + 1));
+            }
+
+            Assert(machine.Memory.ReadByte(0x8000) == result.Image[0x8000],
+                "lab 1 must not overwrite its own first instruction at 8000h");
+
+            Pass("lab 1 sample survives a soft reset without reassembly");
+        }
+
+        private static void Test_Lab3_RequiresExtendedProfile()
+        {
+            LabDefinition lab = LabCatalog.All[2];
+            Assert(lab.Title == "Логические операции", "lab 3 must be the logic lab");
+
+            // Legacy reproduces the historical CPU and lacks ANI/ORI/XRI, so the
+            // logic lab cannot pass there; the UI therefore opens labs in Extended.
+            MachineSnapshot legacy = RunSample(lab.SampleName, CpuProfile.Legacy);
+            LabCheckResult legacyResult = LabCheck.Evaluate(lab, legacy);
+            Assert(!legacyResult.Passed, "lab 3 must not pass under Legacy (ANI/ORI/XRI unsupported)");
+
+            MachineSnapshot extended = RunSample(lab.SampleName, CpuProfile.Extended);
+            LabCheckResult extendedResult = LabCheck.Evaluate(lab, extended);
+            Assert(extendedResult.Passed,
+                "lab 3 must pass under Extended · " + string.Join(" | ", extendedResult.Details));
+
+            Pass("lab 3 requires the Extended profile (Legacy lacks ANI/ORI/XRI)");
+        }
+
         private static SampleProgram FindSample(string name)
         {
             foreach (SampleProgram sample in SampleLibrary.All)
@@ -155,7 +236,7 @@ namespace MikroLab.Tests
             return null;
         }
 
-        private static MachineSnapshot RunSample(string sampleName)
+        private static MachineSnapshot RunSample(string sampleName, CpuProfile profile = CpuProfile.Extended)
         {
             SampleProgram sample = FindSample(sampleName);
             Assert(sample != null, "sample not found: " + sampleName);
@@ -163,7 +244,7 @@ namespace MikroLab.Tests
             AssembleResult result = I8080Assembler.Assemble(sample.Code, 0x8000);
             Assert(result.Success, "sample must assemble: " + sampleName);
 
-            var machine = new Machine(profile: CpuProfile.Extended);
+            var machine = new Machine(profile: profile);
             // Match MachineHost.Assemble: a fresh program starts with a clean
             // register bank, so DE is zero for labs that never touch it.
             for (int address = 0x8000; address <= 0x83FF; address++)

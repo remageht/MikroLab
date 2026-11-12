@@ -150,8 +150,8 @@ namespace MikroLab.App.Workspaces
                 Font = AppTheme.SmallFont,
                 Margin = new Padding(0, 3, 0, 0)
             };
-            _profileBox.AddItem("Legacy (Лаб. 1–4)");
-            _profileBox.AddItem("Newest (Лаб. 5+)");
+            _profileBox.AddItem("Legacy (Лаб. 1, 2, 4)");
+            _profileBox.AddItem("Newest (Лаб. 1–7)");
             _profileBox.SelectIndex(_host.CpuProfile == MikroLab.Core.Cpu.CpuProfile.Legacy ? 0 : 1);
             _profileBox.SelectionChanged += OnProfileSelected;
             leftFlow.Controls.Add(_profileBox);

@@ -17,6 +17,9 @@ namespace MikroLab.Tests
             Test_IntelHex_RejectsMalformedInput();
             Test_MachineState_RoundTrip_CallStack();
             Test_MachineState_RoundTrip_Halted();
+            Test_MachineState_RoundTrip_LegacyCallStack();
+            Test_MachineState_RestoreSwitchesProfile();
+            Test_MachineState_NullProfileKeepsCpu();
             Test_MachineState_JsonContract();
             Test_MachineState_RejectsMalformedInput();
             Test_Kr580_LayoutAndRoundTrip();
@@ -155,6 +158,105 @@ namespace MikroLab.Tests
             restored.Cpu.State.PC = 0x8000;
             Assert(restored.Cpu.Step(), "Reset must clear the restored HLT latch");
             Console.WriteLine("  [PASS] Machine state round trip preserves HLT");
+        }
+
+        private static void Test_MachineState_RoundTrip_LegacyCallStack()
+        {
+            var machine = new Machine(profile: CpuProfile.Legacy);
+            // 8000: MVI A,11h · 8002: MVI B,22h · 8004: CALL 8010h · 8007: HLT
+            // 8010: MVI A,99h · 8012: MVI B,88h · 8014: RET (restores A/B)
+            machine.Memory.WriteByte(0x8000, 0x3E); machine.Memory.WriteByte(0x8001, 0x11);
+            machine.Memory.WriteByte(0x8002, 0x06); machine.Memory.WriteByte(0x8003, 0x22);
+            machine.Memory.WriteByte(0x8004, 0xCD); machine.Memory.WriteByte(0x8005, 0x10);
+            machine.Memory.WriteByte(0x8006, 0x80);
+            machine.Memory.WriteByte(0x8007, 0x76);
+            machine.Memory.WriteByte(0x8010, 0x3E); machine.Memory.WriteByte(0x8011, 0x99);
+            machine.Memory.WriteByte(0x8012, 0x06); machine.Memory.WriteByte(0x8013, 0x88);
+            machine.Memory.WriteByte(0x8014, 0xC9);
+            machine.Cpu.State.PC = 0x8000;
+            machine.Cpu.State.SP = 0x83F0;
+
+            Assert(machine.Cpu.Step(), "MVI A must execute");
+            Assert(machine.Cpu.Step(), "MVI B must execute");
+            Assert(machine.Cpu.Step(), "CALL must execute");
+            Assert(machine.Cpu.Step(), "subroutine MVI A must execute");
+            Assert(machine.Cpu.CallStackDepth == 1, "must be inside a CALL");
+            Assert(machine.Cpu.State.A == 0x99, "subroutine must have changed A");
+
+            MachineSnapshot snapshot = machine.Capture();
+            Assert(snapshot.Profile == CpuProfile.Legacy, "snapshot must record the Legacy profile");
+            Assert(snapshot.LegacyCallStack != null && snapshot.LegacyCallStack.Length == 1,
+                "snapshot must capture the Legacy call frame");
+            Assert(snapshot.LegacyCallStack[0].Regs[LegacyCpu.REG_A] == 0x11 &&
+                   snapshot.LegacyCallStack[0].Regs[LegacyCpu.REG_B] == 0x22,
+                "frame must hold the register snapshot taken at CALL time");
+            Assert(snapshot.LegacyCallStack[0].RetAddress == 0x8007, "frame return address mismatch");
+
+            string json = MachineStateSerializer.Serialize(snapshot, true, 0x8000);
+            Assert(json.Contains("\"profile\": \"Legacy\""), "state JSON must record the CPU profile");
+            MachineStateFile file = MachineStateSerializer.Deserialize(json);
+
+            // Restore into a machine running the OTHER profile: it must switch back
+            // to Legacy and rebuild the software stack so RET restores registers.
+            var restored = new Machine(profile: CpuProfile.Extended);
+            restored.Restore(file.Snapshot);
+            Assert(restored.Cpu.Profile == CpuProfile.Legacy, "Restore must switch to the saved profile");
+            Assert(restored.Cpu.CallStackDepth == 1, "Restore must rebuild the Legacy call stack");
+            Assert(restored.Cpu.State.PC == 0x8012 && restored.Cpu.State.A == 0x99,
+                "Restore must return to the mid-subroutine position");
+
+            Assert(restored.Cpu.Step(), "subroutine MVI B must execute after restore");
+            Assert(restored.Cpu.Step(), "RET must execute after restore");
+            Assert(restored.Cpu.State.A == 0x11 && restored.Cpu.State.B == 0x22,
+                "Legacy RET must restore the registers saved in the frame");
+            Assert(restored.Cpu.State.PC == 0x8007, "RET must return to the saved address");
+            Assert(restored.Cpu.CallStackDepth == 0, "RET must pop the restored frame");
+            Console.WriteLine("  [PASS] Machine state round trip preserves the Legacy profile and call frames");
+        }
+
+        private static void Test_MachineState_RestoreSwitchesProfile()
+        {
+            var machine = new Machine(profile: CpuProfile.Extended);
+            machine.Memory.WriteByte(0x8000, 0xCD); // CALL 8005h
+            machine.Memory.WriteByte(0x8001, 0x05);
+            machine.Memory.WriteByte(0x8002, 0x80);
+            machine.Memory.WriteByte(0x8005, 0xC9); // RET
+            machine.Cpu.State.PC = 0x8000;
+            machine.Cpu.State.SP = 0x83F0;
+            Assert(machine.Cpu.Step(), "CALL must execute");
+
+            MachineStateFile file = MachineStateSerializer.Deserialize(
+                MachineStateSerializer.Serialize(machine.Capture(), true, 0x8000));
+
+            var restored = new Machine(profile: CpuProfile.Legacy);
+            restored.Restore(file.Snapshot);
+            Assert(restored.Cpu.Profile == CpuProfile.Extended, "Restore must switch to the saved Extended profile");
+            Assert(restored.Cpu.CallStackDepth == 1, "Restore must rebuild the debug stack");
+            Assert(restored.Cpu.Step(), "RET must execute after restore");
+            Assert(restored.Cpu.State.PC == 0x8003, "RET must return to the saved address");
+            Console.WriteLine("  [PASS] Restoring a state switches to the saved CPU profile");
+        }
+
+        private static void Test_MachineState_NullProfileKeepsCpu()
+        {
+            // Older state files and .580 images carry no profile; restoring them
+            // must keep whatever CPU the machine currently uses.
+            var snapshot = new MachineSnapshot
+            {
+                Memory = new byte[0x10000],
+                PC = 0x8000,
+                SP = 0x83F0
+            };
+            Assert(snapshot.Profile == null, "a profile-less snapshot must default to null");
+
+            var extended = new Machine(profile: CpuProfile.Extended);
+            extended.Restore(snapshot);
+            Assert(extended.Cpu.Profile == CpuProfile.Extended, "null profile must keep Extended");
+
+            var legacy = new Machine(profile: CpuProfile.Legacy);
+            legacy.Restore(snapshot);
+            Assert(legacy.Cpu.Profile == CpuProfile.Legacy, "null profile must keep Legacy");
+            Console.WriteLine("  [PASS] A profile-less state keeps the current CPU");
         }
 
         private static void Test_MachineState_JsonContract()

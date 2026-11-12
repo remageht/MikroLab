@@ -481,11 +481,6 @@ namespace MikroLab.Core.Machine
                 _machine.SwitchProfile(profile);
             }
             PublishSnapshot();
-
-            if (wasRunning && !_isDisposed)
-            {
-                Run();
-            }
         }
 
         public void ClearExecutionLog()

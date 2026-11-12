@@ -100,9 +100,16 @@ namespace MikroLab.Presentation
             if (_machine.Cpu.Profile == profile) return;
 
             _session.SwitchProfile(profile);
+            // Switching resets the CPU (the two models' call stacks are not
+            // compatible), so restart from the loaded program's entry point.
+            _session.WithMachine(machine =>
+            {
+                machine.Cpu.State.PC = _entryPoint;
+                machine.Cpu.State.SP = _profile.StackPointer;
+            });
             string desc = profile == CpuProfile.Legacy
-                ? "Legacy (Лабораторные 1–4, особенности КР580, регистры 83E4h)"
-                : "Newest / Extended (Лабораторная 5+, полный Intel 8080)";
+                ? "Legacy (Лабораторные 1, 2, 4; особенности КР580, регистры 83E4h)"
+                : "Newest / Extended (все лабораторные, полный Intel 8080)";
             Output?.Invoke("Профиль процессора: " + desc, LogLevel.Info);
             CpuProfileChanged?.Invoke(profile);
         }

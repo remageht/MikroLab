@@ -385,6 +385,9 @@ namespace MikroLab.App
         private void OpenLabInStudio(string sampleName)
         {
             SampleLibraryLoad(sampleName);
+            // Labs need the full 8080 set (lab 3 uses ANI/ORI/XRI, absent in Legacy).
+            // Load first so the machine is stopped before the profile switch.
+            _host.SwitchCpuProfile(MikroLab.Core.Cpu.CpuProfile.Extended);
             SwitchTo(Workspace.Studio);
             _studio.Output.Log("Открыта лабораторная программа · " + sampleName);
         }
