@@ -69,6 +69,8 @@ namespace MikroLab.Studio
         private readonly UiButton _x64Tab;
         private readonly TextBlock _tagline;
         private readonly UiButton _fileButton;
+        private readonly UiButton _settingsButton;
+        private readonly MikroLabSettings _settings = MikroLabSettings.Load();
         private readonly ThemedDropDown _speedBox;
         private readonly DispatcherTimer _uiTimer;
 
@@ -266,6 +268,21 @@ namespace MikroLab.Studio
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
             };
+            _settingsButton = new UiButton
+            {
+                Text = "Настройки",
+                Kind = UiButtonKind.Ghost,
+                Width = 100,
+                Height = 32,
+                FontSize = AppTheme.SmallSize,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _settingsButton.Click += () => _ = ShowSettingsAsync();
+            ToolTip.SetTip(_settingsButton,
+                "Скорость, автосборка, адрес загрузки, тумблеры стенда");
+            headerLayout.Children.Add(_settingsButton);
+            Grid.SetColumn(_settingsButton, 5);
+
             about.Click += ShowHelp;
             ToolTip.SetTip(about, "Горячие клавиши, возможности и лицензия");
             headerLayout.Children.Add(about);
@@ -373,6 +390,38 @@ namespace MikroLab.Studio
             label.VerticalAlignment = VerticalAlignment.Center;
             label.Margin = new Thickness(0, 0, 14, 0);
             return label;
+        }
+
+        /// <summary>Opens the settings dialog and applies the chosen values.</summary>
+        private async Task ShowSettingsAsync()
+        {
+            bool applied = await SettingsDialog.ShowAsync(this, _settings);
+            if (!applied)
+                return;
+
+            ApplySettings();
+            _studio.Output.Log("Настройки применены");
+        }
+
+        /// <summary>Applies the stored settings to the machine and the studio.</summary>
+        private void ApplySettings()
+        {
+            int speedIndex = Math.Max(0, Math.Min(SpeedValues.Length - 1, _settings.SpeedIndex));
+            if (_speedBox.SelectedIndex != speedIndex)
+                _speedBox.SelectIndex(speedIndex);
+            else
+                OnSpeedSelected(speedIndex);
+
+            _host.Session.LogExecution = _settings.TraceEveryInstruction;
+
+            _host.WithMachine(machine =>
+            {
+                machine.Ppi.Tumbler1 = _settings.Tumbler1;
+                machine.Ppi.Tumbler2 = _settings.Tumbler2;
+                machine.Ppi.Tumbler3 = _settings.Tumbler3;
+            });
+
+            _studio.HostSetFontScale(_settings.EditorFontScale);
         }
 
         private void SwitchTo(Workspace workspace)
