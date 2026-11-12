@@ -200,6 +200,9 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          # в релиз выкладывается только студия под Windows; сборки для
+          # Linux и macOS остаются артефактами запуска CI
+          name: studio-win-x64
           path: release-assets
           merge-multiple: true
 
@@ -212,7 +215,7 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           cat > release-notes.md <<'NOTES'
-          ## MikroLab {{TAG}} — архитектуры Intel 8086 и x86-64
+          ## MikroLab {{TAG}} — студия с архитектурами Intel 8086 и x86-64
 
           Релиз с полноценной поддержкой 16-разрядных архитектур: Intel 8086 и
           x86-64 в режиме long mode. Эмулятор теперь работает с тремя процессорами —
@@ -242,20 +245,24 @@ jobs:
             текущую архитектуру;
           - **Дизассемблирование** собранной программы — адрес, байты каждой команды и
             строка исходника;
+          - **Диалог «Настройки»** в студии: скорость, трассировка, адрес загрузки,
+            автосборка и автодизассемблирование при открытии файла, тумблеры стенда,
+            масштаб шрифта; настройки хранятся в профиле пользователя;
           - **CLI**: `--arch i8086|x64` для команд `assemble` и `run`, `--origin` для
             адреса загрузки, а также `--workspace`, `--program` и `--run` для студии.
 
           ### Сборки
 
-          | Файл | Платформа | Что внутри |
-          | --- | --- | --- |
-          | `MikroLab.exe` | Windows x64 | MikroLab Studio (WinForms), один файл |
-          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), один файл, LICENSE, README |
-          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), один файл, LICENSE, README |
-          | `MikroLab-osx-x64.tar.gz` | macOS Intel | MikroLab.app, LICENSE, README |
-          | `MikroLab-osx-arm64.tar.gz` | macOS Apple Silicon | MikroLab.app, LICENSE, README |
+          В релиз входит только студия для Windows:
 
-          ### Проверено
+| Файл | Платформа | Что внутри |
+| --- | --- | --- |
+| `MikroLab.exe` | Windows x64 | MikroLab Studio (WinForms), один файл |
+
+Сборки для Linux и macOS (Avalonia-версия студии) собираются в CI и
+доступны как артефакты запуска — в релиз они не выкладываются.
+
+### Проверено
 
           - кодировка ассемблеров i8086 и x64 совпадает с NASM байт в байт;
           - автоматические тесты ядер: арифметика, флаги, переполнение, вызовы,
