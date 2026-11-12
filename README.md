@@ -266,6 +266,19 @@ open MikroLab.app
 (в минимальных контейнерах их может не быть). На x64-системах используйте
 `linux-x64`, на ARM64 (например, Raspberry Pi) — `linux-arm64`.
 
+Установка библиотек:
+
+```bash
+# Debian / Ubuntu / Raspberry Pi OS
+sudo apt install libx11-6 libice6 libsm6 libfontconfig1                  libxext6 libxrandr2 libxi6 libxcursor1
+
+# Fedora / RHEL
+sudo dnf install libX11 libICE libSM fontconfig                  libXext libXrandr libXi libXcursor
+```
+
+Сборка self-contained: .NET и SkiaSharp внутри файла, поэтому дополнительно
+ничего ставить не нужно — только перечисленные системные библиотеки.
+
 Обе оболочки — WinForms и Avalonia — используют общий `MikroLab.Presentation`
 и `MikroLab.Core`, поэтому форматы файлов, профили, лабораторные работы,
 отладчик и горячие клавиши совпадают.
