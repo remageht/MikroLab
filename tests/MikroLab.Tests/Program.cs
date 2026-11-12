@@ -25,6 +25,7 @@ namespace MikroLab.Tests
             failures += Run("RotationTests", RotationTests.RunAll);
             failures += Run("BreakpointTests", BreakpointTests.RunAll);
             failures += Run("I8086Tests", I8086Tests.RunAll);
+            failures += Run("X64Tests", X64Tests.RunAll);
 
             Console.WriteLine("=================================================");
             if (failures == 0)

@@ -93,6 +93,9 @@ namespace MikroLab.Cli
             string sourcePath = RequireSource(args, 1);
             string output = GetOption(args, "-o") ?? GetOption(args, "--output");
 
+            if (IsX64(args))
+                return X64Commands.Assemble(args, sourcePath, output);
+
             if (IsI8086(args))
                 return I8086Commands.Assemble(args, sourcePath, output);
 
@@ -137,6 +140,9 @@ namespace MikroLab.Cli
         {
             CpuProfile profile = GetProfileOption(args);
             string sourcePath = RequireSource(args, 1);
+
+            if (IsX64(args))
+                return X64Commands.Run(args, sourcePath);
 
             if (IsI8086(args))
                 return I8086Commands.Run(args, sourcePath);
@@ -890,13 +896,30 @@ namespace MikroLab.Cli
         /// <summary>True when the Intel 8086 architecture was requested.</summary>
         private static bool IsI8086(string[] args)
         {
-            string arch = GetOption(args, "--arch") ?? GetOption(args, "--architecture");
+            string arch = ArchitectureOption(args);
             if (string.IsNullOrEmpty(arch))
                 return false;
 
             return arch.Equals("i8086", StringComparison.OrdinalIgnoreCase)
-                || arch.Equals("8086", StringComparison.OrdinalIgnoreCase)
-                || arch.Equals("x86", StringComparison.OrdinalIgnoreCase);
+                || arch.Equals("8086", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True when the x86-64 architecture was requested.</summary>
+        private static bool IsX64(string[] args)
+        {
+            string arch = ArchitectureOption(args);
+            if (string.IsNullOrEmpty(arch))
+                return false;
+
+            return arch.Equals("x64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("x86-64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("x86_64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("amd64", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ArchitectureOption(string[] args)
+        {
+            return GetOption(args, "--arch") ?? GetOption(args, "--architecture");
         }
 
         private static bool IsHelp(string value)        {
