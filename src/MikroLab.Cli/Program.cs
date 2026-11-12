@@ -92,6 +92,10 @@ namespace MikroLab.Cli
         {
             string sourcePath = RequireSource(args, 1);
             string output = GetOption(args, "-o") ?? GetOption(args, "--output");
+
+            if (IsI8086(args))
+                return I8086Commands.Assemble(args, sourcePath, output);
+
             string source = File.ReadAllText(sourcePath);
             AssembleResult result = I8080Assembler.Assemble(source, DefaultOrigin);
 
@@ -132,7 +136,12 @@ namespace MikroLab.Cli
         private static int RunCommand(string[] args)
         {
             CpuProfile profile = GetProfileOption(args);
-            LoadedProgram program = LoadProgram(RequireSource(args, 1), profile);
+            string sourcePath = RequireSource(args, 1);
+
+            if (IsI8086(args))
+                return I8086Commands.Run(args, sourcePath);
+
+            LoadedProgram program = LoadProgram(sourcePath, profile);
             int maxSteps = GetIntOption(args, "--steps", 1000000);
             ulong maxCycles = GetULongOption(args, "--max-cycles", 0);
             bool trace = HasFlag(args, "--trace");
@@ -878,8 +887,19 @@ namespace MikroLab.Cli
 
         // ------------------------------------------------------------------ options
 
-        private static bool IsHelp(string value)
+        /// <summary>True when the Intel 8086 architecture was requested.</summary>
+        private static bool IsI8086(string[] args)
         {
+            string arch = GetOption(args, "--arch") ?? GetOption(args, "--architecture");
+            if (string.IsNullOrEmpty(arch))
+                return false;
+
+            return arch.Equals("i8086", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("8086", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("x86", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsHelp(string value)        {
             return value == "-h" || value == "--help" || value == "help" || value == "/?";
         }
 
