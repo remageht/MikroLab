@@ -18,6 +18,7 @@ namespace MikroLab.App
             AppDomain.CurrentDomain.UnhandledException += (sender, eventArgs) => ReportFatal(eventArgs.ExceptionObject as Exception);
 
             string captureDirectory = null;
+            bool showSettings = false;
             int sample = 0;
             string workspace = "studio";
             string program = null;
@@ -27,6 +28,9 @@ namespace MikroLab.App
             {
                 switch (args[i])
                 {
+                    case "--settings":
+                        showSettings = true;
+                        break;
                     case "--capture":
                         captureDirectory = i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)
                             ? args[++i]
@@ -58,6 +62,10 @@ namespace MikroLab.App
             }
 
             var form = new MainForm();
+            if (showSettings)
+            {
+                form.Shown += (sender, args) => form.ShowSettings();
+            }
             if (captureDirectory != null)
             {
                 form.Shown += (sender, eventArgs) => form.BeginCapture(captureDirectory, sample, workspace);

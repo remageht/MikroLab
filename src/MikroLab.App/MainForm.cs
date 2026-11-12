@@ -55,6 +55,8 @@ namespace MikroLab.App
         private readonly Label _reasonLabel;
         private readonly Label _workspaceLabel;
         private readonly Label _tagline;
+        private readonly UiButton _settingsButton;
+        private readonly MikroLabSettings _settings = MikroLabSettings.Load();
 
         private Workspace _workspace = Workspace.Studio;
         private MachineSnapshot _snapshot;
@@ -225,6 +227,19 @@ namespace MikroLab.App
                 Font = AppTheme.SmallFont,
                 Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
+            _settingsButton = new UiButton
+            {
+                Text = "Настройки",
+                Kind = UiButtonKind.Ghost,
+                Width = 100,
+                Height = 32,
+                Font = AppTheme.SmallFont,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            _settingsButton.Click += (sender, args) => ShowSettings();
+            _toolTips.SetToolTip(_settingsButton,
+                "Скорость, автосборка, адрес загрузки, тумблеры стенда");
+
             about.Click += (sender, args) => ShowHelp();
             _toolTips.SetToolTip(about, "Горячие клавиши, возможности и лицензия");
 
@@ -263,12 +278,14 @@ namespace MikroLab.App
             _header.Controls.Add(_speedLabel);
             _header.Controls.Add(_speedBox);
             _header.Controls.Add(about);
+            _header.Controls.Add(_settingsButton);
             _header.Resize += (sender, args) =>
             {
                 _switchBar.Left = Math.Max(448, (_header.Width - _switchBar.Width) / 2);
                 _switchBar.Top = 12;
                 about.Location = new Point(_header.Width - about.Width - 18, 16);
-                _speedBox.Location = new Point(about.Left - _speedBox.Width - 10, 17);
+                _settingsButton.Location = new Point(about.Left - _settingsButton.Width - 8, 16);
+                _speedBox.Location = new Point(_settingsButton.Left - _speedBox.Width - 10, 17);
                 _speedLabel.Location = new Point(_speedBox.Left - _speedLabel.Width - 8, 24);
             };
 
@@ -368,6 +385,7 @@ namespace MikroLab.App
             _uiTimer.Start();
 
             _host.Session.PublishSnapshot();
+            ApplySettings();
             SwitchTo(Workspace.Studio);
             UpdateTitle();
             PumpUi();
@@ -390,6 +408,42 @@ namespace MikroLab.App
                 Margin = new Padding(0),
                 BackColor = Color.Transparent
             };
+        }
+
+        /// <summary>
+        /// Opens the settings dialog and applies the chosen values.
+        /// </summary>
+        public void ShowSettings()
+        {
+            using (var dialog = new SettingsDialog(_settings))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return;
+            }
+
+            ApplySettings();
+            _studio.Output.Log("Настройки применены");
+        }
+
+        /// <summary>Applies the stored settings to the machine and the studio.</summary>
+        private void ApplySettings()
+        {
+            int speedIndex = Math.Max(0, Math.Min(SpeedValues.Length - 1, _settings.SpeedIndex));
+            if (_speedBox.SelectedIndex != speedIndex)
+                _speedBox.SelectIndex(speedIndex);
+            else
+                OnSpeedSelected(speedIndex);
+
+            _host.Session.LogExecution = _settings.TraceEveryInstruction;
+
+            _host.WithMachine(machine =>
+            {
+                machine.Ppi.Tumbler1 = _settings.Tumbler1;
+                machine.Ppi.Tumbler2 = _settings.Tumbler2;
+                machine.Ppi.Tumbler3 = _settings.Tumbler3;
+            });
+
+            _studio.HostSetFontScale(_settings.EditorFontScale);
         }
 
         private void SwitchTo(Workspace workspace)
