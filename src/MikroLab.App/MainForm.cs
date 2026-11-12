@@ -22,7 +22,8 @@ namespace MikroLab.App
         private enum Workspace
         {
             Studio,
-            Laboratory
+            Laboratory,
+            I8086
         }
 
         private readonly MachineHost _host;
@@ -30,11 +31,13 @@ namespace MikroLab.App
         private readonly IScreenshotService _screenshots;
         private readonly StudioWorkspace _studio;
         private readonly LaboratoryWorkspace _laboratory;
+        private readonly I8086Workspace _i8086;
         private readonly Panel _content;
         private readonly Panel _header;
         private readonly Panel _switchBar;
         private readonly UiButton _studioTab;
         private readonly UiButton _labTab;
+        private readonly UiButton _i8086Tab;
         private readonly UiButton _fileButton;
         private readonly ThemedDropDown _speedBox;
         private readonly Label _speedLabel;
@@ -160,12 +163,24 @@ namespace MikroLab.App
                 Margin = new Padding(0),
                 ClearColor = AppTheme.SurfaceRaised
             };
+            _i8086Tab = new UiButton
+            {
+                Text = "i8086",
+                Kind = UiButtonKind.Ghost,
+                Width = 92,
+                Height = 32,
+                Font = AppTheme.SmallFont,
+                CornerRadius = 7,
+                Margin = new Padding(0),
+                ClearColor = AppTheme.SurfaceRaised
+            };
             _studioTab.Click += (sender, args) => SwitchTo(Workspace.Studio);
             _labTab.Click += (sender, args) => SwitchTo(Workspace.Laboratory);
+            _i8086Tab.Click += (sender, args) => SwitchTo(Workspace.I8086);
 
             _switchBar = new Panel
             {
-                Width = 264,
+                Width = 372,
                 Height = 40,
                 BackColor = AppTheme.Surface
             };
@@ -178,8 +193,10 @@ namespace MikroLab.App
             };
             _studioTab.Location = new Point(4, 4);
             _labTab.Location = new Point(132, 4);
+            _i8086Tab.Location = new Point(264, 4);
             _switchBar.Controls.Add(_studioTab);
             _switchBar.Controls.Add(_labTab);
+            _switchBar.Controls.Add(_i8086Tab);
 
             var about = new UiButton
             {
@@ -248,11 +265,13 @@ namespace MikroLab.App
 
             _studio = new StudioWorkspace(_host, _files) { Dock = DockStyle.Fill };
             _laboratory = new LaboratoryWorkspace(_host) { Dock = DockStyle.Fill, Visible = false };
+            _i8086 = new I8086Workspace(_files) { Dock = DockStyle.Fill, Visible = false };
             _studio.DocumentTitleChanged += UpdateTitle;
             _laboratory.OpenInStudioRequested += OpenLabInStudio;
 
             _content.Controls.Add(_studio);
             _content.Controls.Add(_laboratory);
+            _content.Controls.Add(_i8086);
 
             // ------------------------------------------------------------------ status bar
 
@@ -357,23 +376,32 @@ namespace MikroLab.App
         {
             _workspace = workspace;
             bool studio = workspace == Workspace.Studio;
+            bool laboratory = workspace == Workspace.Laboratory;
+            bool i8086 = workspace == Workspace.I8086;
 
             _studio.Visible = studio;
-            _laboratory.Visible = !studio;
+            _laboratory.Visible = laboratory;
+            _i8086.Visible = i8086;
             if (studio)
             {
                 _studio.BringToFront();
             }
-            else
+            else if (laboratory)
             {
                 _laboratory.BringToFront();
             }
+            else
+            {
+                _i8086.BringToFront();
+            }
 
             _studioTab.Active = studio;
-            _labTab.Active = !studio;
+            _labTab.Active = laboratory;
+            _i8086Tab.Active = i8086;
             _studioTab.Invalidate();
             _labTab.Invalidate();
-            _workspaceLabel.Text = studio ? "Студия" : "Лаборатория";
+            _i8086Tab.Invalidate();
+            _workspaceLabel.Text = studio ? "Студия" : laboratory ? "Лаборатория" : "Intel 8086";
 
             PumpUi();
             if (studio)
@@ -412,7 +440,7 @@ namespace MikroLab.App
                 _snapshot = snapshot;
             }
 
-            if (_snapshot != null)
+            if (_snapshot != null && _workspace != Workspace.I8086)
             {
                 if (_workspace == Workspace.Studio)
                 {
@@ -623,6 +651,42 @@ namespace MikroLab.App
         /// Used by docs/screens generation and by the visual regression check.
         /// A watchdog guarantees the process can never hang in CI.
         /// </summary>
+        /// <summary>Switches to a workspace by name: studio, laboratory or i8086.</summary>
+        public void SelectWorkspace(string name)
+        {
+            if (string.Equals(name, "i8086", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "8086", StringComparison.OrdinalIgnoreCase))
+            {
+                SwitchTo(Workspace.I8086);
+                return;
+            }
+
+            if (string.Equals(name, "lab", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "laboratory", StringComparison.OrdinalIgnoreCase))
+            {
+                SwitchTo(Workspace.Laboratory);
+                return;
+            }
+
+            SwitchTo(Workspace.Studio);
+        }
+
+        /// <summary>Loads an Intel 8086 source file into the i8086 workspace.</summary>
+        public void LoadI8086Program(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+            SwitchTo(Workspace.I8086);
+            _i8086.HostLoadFile(path);
+        }
+
+        /// <summary>Runs the program loaded in the i8086 workspace.</summary>
+        public void RunI8086Program()
+        {
+            SwitchTo(Workspace.I8086);
+            _i8086.HostRun();
+        }
+
         public void BeginCapture(string directory, int sample, string workspace)
         {
             _captureDirectory = directory;
@@ -658,6 +722,10 @@ namespace MikroLab.App
                         if (_captureWorkspace == "lab" || _captureWorkspace == "laboratory")
                         {
                             SwitchTo(Workspace.Laboratory);
+                        }
+                        else if (_captureWorkspace == "i8086" || _captureWorkspace == "8086")
+                        {
+                            SwitchTo(Workspace.I8086);
                         }
                         else
                         {

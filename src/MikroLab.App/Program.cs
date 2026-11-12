@@ -20,6 +20,8 @@ namespace MikroLab.App
             string captureDirectory = null;
             int sample = 0;
             string workspace = "studio";
+            string program = null;
+            bool run = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -43,6 +45,15 @@ namespace MikroLab.App
                             workspace = args[++i];
                         }
                         break;
+                    case "--program":
+                        if (i + 1 < args.Length)
+                        {
+                            program = args[++i];
+                        }
+                        break;
+                    case "--run":
+                        run = true;
+                        break;
                 }
             }
 
@@ -50,6 +61,23 @@ namespace MikroLab.App
             if (captureDirectory != null)
             {
                 form.Shown += (sender, eventArgs) => form.BeginCapture(captureDirectory, sample, workspace);
+            }
+            else if (!string.Equals(workspace, "studio", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(program))
+            {
+                form.Shown += (sender, eventArgs) =>
+                {
+                    form.SelectWorkspace(workspace);
+                    if (!string.IsNullOrEmpty(program))
+                    {
+                        form.LoadI8086Program(program);
+                    }
+
+                    if (run)
+                    {
+                        form.RunI8086Program();
+                    }
+                };
             }
 
             Application.Run(form);
