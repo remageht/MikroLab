@@ -68,14 +68,25 @@ namespace MikroLab.App
                 form.Shown += (sender, eventArgs) =>
                 {
                     form.SelectWorkspace(workspace);
+
+                    bool x64 = string.Equals(workspace, "x64", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(workspace, "x86-64", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(workspace, "amd64", StringComparison.OrdinalIgnoreCase);
+
                     if (!string.IsNullOrEmpty(program))
                     {
-                        form.LoadI8086Program(program);
+                        if (x64)
+                            form.LoadX64Program(program);
+                        else
+                            form.LoadI8086Program(program);
                     }
 
                     if (run)
                     {
-                        form.RunI8086Program();
+                        if (x64)
+                            form.RunX64Program();
+                        else
+                            form.RunI8086Program();
                     }
                 };
             }
