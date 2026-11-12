@@ -65,6 +65,10 @@ namespace MikroLab.Studio
                     window.Opened += (sender, args) => window.BeginCapture(
                         Options.CaptureDirectory, Options.Sample, Options.Workspace);
                 }
+                else if (!string.Equals(Options.Workspace, "studio", StringComparison.OrdinalIgnoreCase))
+                {
+                    window.Opened += (sender, args) => window.SelectWorkspace(Options.Workspace);
+                }
             }
 
             base.OnFrameworkInitializationCompleted();

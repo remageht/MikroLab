@@ -54,6 +54,7 @@ namespace MikroLab.App
         private readonly Label _breakpointLabel;
         private readonly Label _reasonLabel;
         private readonly Label _workspaceLabel;
+        private readonly Label _tagline;
 
         private Workspace _workspace = Workspace.Studio;
         private MachineSnapshot _snapshot;
@@ -134,9 +135,9 @@ namespace MikroLab.App
                 BackColor = Color.Transparent,
                 Location = new Point(70, 8)
             };
-            var tagline = new Label
+            _tagline = new Label
             {
-                Text = "КР580ВМ80А · Intel 8080 · учебный эмулятор",
+                Text = WorkspaceTagline(Workspace.Studio),
                 Font = AppTheme.SmallFont,
                 ForeColor = AppTheme.TextMuted,
                 AutoSize = true,
@@ -256,7 +257,7 @@ namespace MikroLab.App
 
             _header.Controls.Add(mark);
             _header.Controls.Add(brand);
-            _header.Controls.Add(tagline);
+            _header.Controls.Add(_tagline);
             _header.Controls.Add(_fileButton);
             _header.Controls.Add(_switchBar);
             _header.Controls.Add(_speedLabel);
@@ -431,6 +432,7 @@ namespace MikroLab.App
             _workspaceLabel.Text = studio ? "Студия"
                 : laboratory ? "Лаборатория"
                 : i8086 ? "Intel 8086" : "Intel x86-64";
+            _tagline.Text = WorkspaceTagline(workspace);
 
             PumpUi();
             if (studio)
@@ -680,6 +682,25 @@ namespace MikroLab.App
         /// Used by docs/screens generation and by the visual regression check.
         /// A watchdog guarantees the process can never hang in CI.
         /// </summary>
+        /// <summary>
+        /// Subtitle under the product name: it follows the selected workspace so
+        /// the current architecture is always visible.
+        /// </summary>
+        private static string WorkspaceTagline(Workspace workspace)
+        {
+            switch (workspace)
+            {
+                case Workspace.Laboratory:
+                    return "Лабораторные работы 1–5 · КР580ВМ80А · Intel 8080";
+                case Workspace.I8086:
+                    return "Intel 8086 · 16-разрядный реальный режим · DOS-сервисы";
+                case Workspace.X64:
+                    return "Intel x86-64 · long mode · 64-разрядные регистры";
+                default:
+                    return "КР580ВМ80А · Intel 8080 · учебный эмулятор";
+            }
+        }
+
         /// <summary>Switches to a workspace by name: studio, laboratory, i8086 or x64.</summary>
         public void SelectWorkspace(string name)
         {

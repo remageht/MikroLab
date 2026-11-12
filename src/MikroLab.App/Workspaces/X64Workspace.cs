@@ -163,9 +163,10 @@ namespace MikroLab.App.Workspaces
             UiButton run = Make("Выполнить", RunProgram, 104);
             UiButton step = Make("Шаг", StepOnce, 74);
             UiButton reset = Make("Сброс", ResetMachine, 74);
+            UiButton disasm = Make("Дизассемблировать", ShowDisassembly, 132);
 
             int x = 12;
-            foreach (UiButton button in new[] { open, save, assemble, run, step, reset })
+            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm })
             {
                 button.Location = new Point(x, 9);
                 x += button.Width + 8;
@@ -179,6 +180,7 @@ namespace MikroLab.App.Workspaces
             panel.Controls.Add(run);
             panel.Controls.Add(step);
             panel.Controls.Add(reset);
+            panel.Controls.Add(disasm);
             panel.Controls.Add(_statusLabel);
             return panel;
         }
@@ -496,6 +498,35 @@ message: db      'RAX = ', '$'
         }
 
         // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Shows the machine code of the assembled program: the address, the
+        /// bytes of every instruction and the source line.
+        /// </summary>
+        private void ShowDisassembly()
+        {
+            if (_assembly == null)
+            {
+                AssembleProgram();
+                if (_assembly == null)
+                    return;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine();
+            builder.AppendLine("Дизассемблирование:");
+            foreach (X64ListingLine line in _assembly.Listing)
+            {
+                if (!line.HasAddress || line.Bytes.Length == 0)
+                    continue;
+                builder.Append(line.Offset.ToString("X8")).Append("h  ");
+                foreach (byte value in line.Bytes)
+                    builder.Append(value.ToString("X2")).Append(' ');
+                builder.Append(' ').Append(line.Source.Trim()).AppendLine();
+            }
+
+            _consoleView.AppendText(builder.ToString());
+        }
 
         private void RefreshPanels()
         {
