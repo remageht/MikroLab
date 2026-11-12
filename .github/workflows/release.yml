@@ -212,59 +212,55 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           cat > release-notes.md <<'NOTES'
-          ## MikroLab {{TAG}} — тестовая версия
+          ## MikroLab {{TAG}} — архитектуры Intel 8086 и x86-64
 
-          Первый тестовый предрелиз MikroLab с обновлённой консольной средой.
+          Релиз с полноценной поддержкой 16-разрядных архитектур: Intel 8086 и
+          x86-64 в режиме long mode. Эмулятор теперь работает с тремя процессорами —
+          КР580ВМ80А (Intel 8080), Intel 8086 и Intel x86-64.
 
           ### Что нового
 
-          - Команда `lab 1..7` с автоматической проверкой лабораторных работ 1–4.
-          - Команды `disasm` и `info` для дизассемблирования и справки по карте памяти.
-          - Русская справка CLI и единый русский вывод команд.
-          - Выбор профиля процессора: `--profile legacy|newest`.
-          - Windows-сборка MikroLab Studio и кроссплатформенные сборки для Linux/macOS.
+          - **Ядро Intel 8086** — полный набор команд 8086 в реальном режиме:
+            `IMUL` и `IDIV` считают в паре `DX:AX`, строковые операции работают с
+            префиксами `REP`, переполнение 16-разрядного сложения определяется
+            аппаратным флагом `OF` (проверка `JO` / `JNO`), есть вектор прерываний;
+          - **Ядро Intel x86-64** — long mode: REX-префиксы, 64-битные операнды,
+            RIP-относительная адресация, байт SIB, 64-битные `MUL` и `DIV`
+            (`RDX:RAX`), `SETcc` и `CMOVcc`, `MOVZX` / `MOVSX` / `MOVSXD`,
+            разреженная память на 1 МБ и выше;
+          - **Ассемблеры Intel-синтаксиса** для обеих архитектур: `ORG`, `DB` / `DW` /
+            `DD` / `DQ`, `TIMES`, `EQU`, `RESB` / `RESW` / `RESD` / `RESQ`, `%INCLUDE`,
+            выражения и релаксация переходов между короткой и длинной формой.
+            Кодировка совпадает с NASM **байт в байт**;
+          - **Сервисы DOS** `INT 21h` и `INT 16h` — программы в формате `.COM`
+            выполняются прямо в эмуляторе и печатают результат в окно вывода;
+          - **Рабочие области «i8086» и «x64»** в обеих студиях (WinForms и Avalonia):
+            редактор исходного текста, регистры, сегментные регистры, флаги, дамп
+            памяти и окно вывода программы;
+          - **Переключатель архитектур** в шапке студии: Студия · Лаборатория · i8086 ·
+            x64. Подпись под логотипом меняется вместе с вкладкой и показывает
+            текущую архитектуру;
+          - **Дизассемблирование** собранной программы — адрес, байты каждой команды и
+            строка исходника;
+          - **CLI**: `--arch i8086|x64` для команд `assemble` и `run`, `--origin` для
+            адреса загрузки, а также `--workspace`, `--program` и `--run` для студии.
 
-          ### Состав релиза
+          ### Сборки
 
-          | Файл | Платформа | Содержимое |
+          | Файл | Платформа | Что внутри |
           | --- | --- | --- |
           | `MikroLab.exe` | Windows x64 | MikroLab Studio (WinForms), один файл |
-          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), LICENSE, THIRD-PARTY-NOTICES.md, README.md |
-          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), LICENSE, THIRD-PARTY-NOTICES.md, README.md |
-          | `MikroLab-osx-x64.tar.gz` | macOS Intel | MikroLab.app, LICENSE, THIRD-PARTY-NOTICES.md, README.md |
-          | `MikroLab-osx-arm64.tar.gz` | macOS Apple Silicon (M1–M4) | MikroLab.app, LICENSE, THIRD-PARTY-NOTICES.md, README.md |
+          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), один файл, LICENSE, README |
+          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), один файл, LICENSE, README |
+          | `MikroLab-osx-x64.tar.gz` | macOS Intel | MikroLab.app, LICENSE, README |
+          | `MikroLab-osx-arm64.tar.gz` | macOS Apple Silicon | MikroLab.app, LICENSE, README |
 
-          ### Быстрый старт
+          ### Проверено
 
-          **Windows:** запустите `MikroLab.exe`.
-
-          **Linux:**
-
-          ```bash
-          tar -xzf MikroLab-linux-x64.tar.gz
-          ./MikroLab
-          ```
-
-          **macOS:**
-
-          ```bash
-          tar -xzf MikroLab-osx-arm64.tar.gz
-          open MikroLab.app
-          ```
-
-          При необходимости снимите карантин: `xattr -d com.apple.quarantine MikroLab.app`.
-
-          ### Ограничения
-
-          - Это тестовая версия (`beta`), возможны ошибки и изменение интерфейса.
-          - CLI не входит в релизные архивы и предназначен для разработки и автоматизации.
-          - На macOS приложение не подписано; для запуска может потребоваться разрешение Gatekeeper.
-
-          ### Проверка
-
-          Перед публикацией выполняются тесты `MikroLab.Tests` и smoke-проверки CLI (`version`, `lab 1`, `info`).
-
-          Лицензия: GNU GPL v3. Исходный код: https://github.com/remageht/MikroLab
+          - кодировка ассемблеров i8086 и x64 совпадает с NASM байт в байт;
+          - автоматические тесты ядер: арифметика, флаги, переполнение, вызовы,
+            строковые операции, RIP-относительные адреса и вывод DOS;
+          - все тесты проекта проходят без ошибок.
           NOTES
           sed -i "s/{{TAG}}/$TAG/g" release-notes.md
 
