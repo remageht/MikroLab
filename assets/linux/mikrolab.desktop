@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=MikroLab
+GenericName=Emulator of Intel 8080, Intel 8086 and x86-64
+Comment=Emulator of Intel 8080, Intel 8086 and x86-64 microprocessors
+Exec=MikroLab
+Icon=mikrolab
+Terminal=false
+Categories=Development;Education;
+Keywords=emulator;assembler;8080;8086;x86-64;debugger;education;
+MimeType=text/x-asm;
+StartupNotify=true

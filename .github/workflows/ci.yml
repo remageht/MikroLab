@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
   workflow_dispatch:
 
@@ -73,3 +73,60 @@ jobs:
             dotnet run --project src/MikroLab.Avalonia/MikroLab.Avalonia.csproj -c Release --no-build -- \
             --capture "$RUNNER_TEMP/mikrolab-screens" --sample 0 --workspace studio
           ls -la "$RUNNER_TEMP/mikrolab-screens"
+
+      - name: Smoke test of the published Linux build
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          dotnet publish src/MikroLab.Avalonia/MikroLab.Avalonia.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            -o "$RUNNER_TEMP/publish/linux-x64"
+          ls -la "$RUNNER_TEMP/publish/linux-x64"
+          for workspace in studio laboratory i8086 x64; do
+            echo "::group::smoke $workspace"
+            set +e
+            xvfb-run -a -s "-screen 0 1600x1000x24" \
+              "$RUNNER_TEMP/publish/linux-x64/MikroLab" --smoke --workspace "$workspace"
+            code=$?
+            set -e
+            echo "::endgroup::"
+            if [ "$code" -ne 0 ]; then
+              echo "smoke test of the $workspace workspace failed with the code $code"
+              exit "$code"
+            fi
+          done
+
+      - name: Smoke test of the published macOS build
+        if: runner.os == 'macOS'
+        run: |
+          dotnet publish src/MikroLab.Avalonia/MikroLab.Avalonia.csproj \
+            -c Release \
+            -r osx-arm64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            -o "$RUNNER_TEMP/publish/osx-arm64"
+          ls -la "$RUNNER_TEMP/publish/osx-arm64"
+          for workspace in studio x64; do
+            echo "::group::smoke $workspace"
+            set +e
+            "$RUNNER_TEMP/publish/osx-arm64/MikroLab" --smoke --workspace "$workspace"
+            code=$?
+            set -e
+            echo "::endgroup::"
+            if [ "$code" -ne 0 ]; then
+              echo "smoke test of the $workspace workspace failed with the code $code"
+              exit "$code"
+            fi
+          done

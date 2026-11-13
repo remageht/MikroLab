@@ -96,15 +96,19 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             platform: linux
+            smoke: true
           - os: ubuntu-latest
             rid: linux-arm64
             platform: linux
+            smoke: false
           - os: macos-latest
             rid: osx-x64
             platform: osx
+            smoke: false
           - os: macos-latest
             rid: osx-arm64
             platform: osx
+            smoke: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,6 +153,8 @@ jobs:
           mkdir -p package
           cp "publish/${{ matrix.rid }}/MikroLab" package/MikroLab
           cp LICENSE THIRD-PARTY-NOTICES.md README.md package/
+          cp assets/linux/mikrolab.desktop package/
+          cp -r assets/linux/icons package/icons
           chmod +x package/MikroLab
           tar -czf "MikroLab-${{ matrix.rid }}.tar.gz" -C package .
           ls -lh "MikroLab-${{ matrix.rid }}.tar.gz"
@@ -184,6 +190,32 @@ jobs:
           PLIST
           tar -czf "MikroLab-${{ matrix.rid }}.tar.gz" MikroLab.app
           ls -lh "MikroLab-${{ matrix.rid }}.tar.gz"
+
+      - name: Smoke test of the published build
+        if: matrix.smoke == true
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+          for workspace in studio laboratory i8086 x64; do
+            echo "::group::smoke $workspace"
+            set +e
+            if [ "${{ matrix.platform }}" = "linux" ]; then
+              xvfb-run -a -s "-screen 0 1600x1000x24" \
+                "publish/${{ matrix.rid }}/MikroLab" --smoke --workspace "$workspace"
+            else
+              "publish/${{ matrix.rid }}/MikroLab" --smoke --workspace "$workspace"
+            fi
+            code=$?
+            set -e
+            echo "::endgroup::"
+            if [ "$code" -ne 0 ]; then
+              echo "smoke test of the $workspace workspace failed with the code $code"
+              exit "$code"
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -252,15 +284,19 @@ jobs:
           - **Значок приложения** для Windows, Linux и macOS — по мотивам знака
             в шапке студии;
           - **Проверка обновлений** при старте: студия спрашивает GitHub о
-            свежем релизе и предлагает открыть его страницу.
+            свежем релизе и предлагает открыть его страницу;
+          - **Значок в меню приложений Linux**: в архиве лежат `mikrolab.desktop`
+            и значки `icons/`, инструкция по установке — в README;
+          - **Дымовой тест релизных сборок** в CI: опубликованные файлы для
+            Linux и macOS запускаются и проверяются на всех рабочих областях.
 
           ### Сборки
 
           | Файл | Платформа | Что внутри |
           | --- | --- | --- |
           | `MikroLab.exe` | Windows x64 | MikroLab Studio (WinForms), один файл |
-          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), один файл, LICENSE, README |
-          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), один файл, LICENSE, README |
+          | `MikroLab-linux-x64.tar.gz` | Linux x64 | MikroLab (Avalonia), один файл, LICENSE, README, `mikrolab.desktop`, значки |
+          | `MikroLab-linux-arm64.tar.gz` | Linux ARM64 | MikroLab (Avalonia), один файл, LICENSE, README, `mikrolab.desktop`, значки |
           | `MikroLab-osx-x64.tar.gz` | macOS Intel | MikroLab.app, LICENSE, README |
           | `MikroLab-osx-arm64.tar.gz` | macOS Apple Silicon | MikroLab.app, LICENSE, README |
 

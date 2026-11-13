@@ -15,6 +15,12 @@ namespace MikroLab.Studio
         public int Sample { get; private set; }
         public string Workspace { get; private set; } = "studio";
 
+        /// <summary>
+        /// Smoke mode: the studio opens every workspace once and exits with the
+        /// code 0. CI uses it to prove that the published build really starts.
+        /// </summary>
+        public bool Smoke { get; private set; }
+
         public static StartupOptions Parse(string[] args)
         {
             var options = new StartupOptions();
@@ -38,6 +44,9 @@ namespace MikroLab.Studio
                     case "--workspace":
                         if (i + 1 < args.Length) options.Workspace = args[++i];
                         break;
+                    case "--smoke":
+                        options.Smoke = true;
+                        break;
                 }
             }
             return options;
@@ -60,7 +69,11 @@ namespace MikroLab.Studio
             {
                 var window = new MainWindow();
                 desktop.MainWindow = window;
-                if (Options.CaptureDirectory != null)
+                if (Options.Smoke)
+                {
+                    window.Opened += (sender, args) => window.RunSmoke(Options.Workspace);
+                }
+                else if (Options.CaptureDirectory != null)
                 {
                     window.Opened += (sender, args) => window.BeginCapture(
                         Options.CaptureDirectory, Options.Sample, Options.Workspace);

@@ -96,6 +96,9 @@ namespace MikroLab.Studio
         private int _captureSample;
         private string _captureWorkspace;
 
+        // Smoke test state.
+        private Timer _smokeWatchdog;
+
         public MainWindow()
         {
             Title = "MikroLab — КР580ВМ80А";
@@ -1130,6 +1133,38 @@ namespace MikroLab.Studio
         }
 
         // ================================================================== screenshot harness
+
+        /// <summary>
+        /// Opens every workspace once, lets the first frame appear and exits
+        /// with the code 0. CI uses it to prove that the published build really
+        /// starts on Linux and macOS. The watchdog guarantees that a broken
+        /// window never hangs the build.
+        /// </summary>
+        public void RunSmoke(string workspace)
+        {
+            _smokeWatchdog = new Timer(
+                state => Environment.Exit(4),
+                null,
+                TimeSpan.FromSeconds(60),
+                Timeout.InfiniteTimeSpan);
+
+            foreach (Workspace target in new[] { Workspace.Studio, Workspace.Laboratory, Workspace.I8086, Workspace.X64 })
+            {
+                SwitchTo(target);
+                PumpUi();
+            }
+
+            SelectWorkspace(string.IsNullOrEmpty(workspace) ? "studio" : workspace);
+            PumpUi();
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+            timer.Tick += (sender, args) =>
+            {
+                timer.Stop();
+                Environment.Exit(0);
+            };
+            timer.Start();
+        }
 
         /// <summary>
         /// Drives the app through a fixed set of scenes and writes PNG files.

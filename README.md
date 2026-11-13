@@ -270,10 +270,12 @@ open MikroLab.app
 
 ```bash
 # Debian / Ubuntu / Raspberry Pi OS
-sudo apt install libx11-6 libice6 libsm6 libfontconfig1                  libxext6 libxrandr2 libxi6 libxcursor1
+sudo apt install libx11-6 libice6 libsm6 libfontconfig1 \
+                 libxext6 libxrandr2 libxi6 libxcursor1
 
 # Fedora / RHEL
-sudo dnf install libX11 libICE libSM fontconfig                  libXext libXrandr libXi libXcursor
+sudo dnf install libX11 libICE libSM fontconfig \
+                 libXext libXrandr libXi libXcursor
 ```
 
 Сборка self-contained: .NET и SkiaSharp внутри файла, поэтому дополнительно
@@ -282,6 +284,22 @@ sudo dnf install libX11 libICE libSM fontconfig                  libXext libXran
 Обе оболочки — WinForms и Avalonia — используют общий `MikroLab.Presentation`
 и `MikroLab.Core`, поэтому форматы файлов, профили, лабораторные работы,
 отладчик и горячие клавиши совпадают.
+
+#### Значок в меню приложений (Linux)
+
+В Linux-архиве лежит файл `mikrolab.desktop` и значки `icons/`. Чтобы
+приложение появилось в меню приложений и в поиске:
+
+```bash
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps
+cp MikroLab ~/.local/bin/
+cp mikrolab.desktop ~/.local/share/applications/
+cp icons/256x256/mikrolab.png ~/.local/share/icons/hicolor/256x256/apps/mikrolab.png
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
+После этого MikroLab запускается как обычное приложение — `MikroLab` в терминале
+или значок мышью.
 
 ### CLI для разработки
 
@@ -318,6 +336,18 @@ src/MikroLab.Avalonia/bin/Debug/net10.0/MikroLab --capture docs/screens
 Эталоны в `docs/screens` сняты WinForms-оболочкой вместе с рамкой окна.
 Avalonia снимает клиентскую область, поэтому для неё сравнивайте содержимое
 сцен, а не байты PNG. В Linux без дисплея используйте `xvfb-run`.
+
+### Дымовой запуск
+
+Avalonia-оболочка умеет открыть все рабочие области и завершиться с кодом `0` —
+этим проверяется, что релизная сборка действительно запускается:
+
+```bash
+xvfb-run -a src/MikroLab.Avalonia/bin/Debug/net10.0/MikroLab --smoke --workspace x64
+```
+
+Код `0` — всё в порядке, `3` — окно не открылось, `4` — процесс завис и был
+остановлен сторожевым таймером.
 
 ## Горячие клавиши
 
