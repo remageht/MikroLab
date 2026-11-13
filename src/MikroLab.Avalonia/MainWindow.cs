@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using MikroLab.Core.Machine;
 using MikroLab.Presentation;
@@ -98,6 +99,7 @@ namespace MikroLab.Studio
         public MainWindow()
         {
             Title = "MikroLab — КР580ВМ80А";
+            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://MikroLab/Assets/mikrolab-icon.png")));
             Width = 1420;
             Height = 880;
             MinWidth = 1120;
@@ -377,6 +379,8 @@ namespace MikroLab.Studio
             SwitchTo(Workspace.Studio);
             UpdateTitle();
             PumpUi();
+
+            Opened += async (sender, args) => await CheckForUpdateAsync();
         }
 
         public StudioWorkspace Studio => _studio;
@@ -401,6 +405,22 @@ namespace MikroLab.Studio
 
             ApplySettings();
             _studio.Output.Log("Настройки применены");
+        }
+
+        /// <summary>
+        /// Checks GitHub for a newer release. The check runs in the background
+        /// and never blocks the studio.
+        /// </summary>
+        private async Task CheckForUpdateAsync()
+        {
+            UpdateInfo info = await UpdateChecker.CheckAsync().ConfigureAwait(true);
+            if (info == null || !info.UpdateAvailable)
+                return;
+
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                await UpdateDialog.ShowAsync(this, info);
+            });
         }
 
         /// <summary>Applies the stored settings to the machine and the studio.</summary>

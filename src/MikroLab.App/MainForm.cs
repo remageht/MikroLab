@@ -71,6 +71,7 @@ namespace MikroLab.App
 
         public MainForm()
         {
+            Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Text = "MikroLab — КР580ВМ80А";
             BackColor = AppTheme.Window;
             ForeColor = AppTheme.Text;
@@ -387,6 +388,7 @@ namespace MikroLab.App
             _host.Session.PublishSnapshot();
             ApplySettings();
             SwitchTo(Workspace.Studio);
+            CheckForUpdateAsync();
             UpdateTitle();
             PumpUi();
         }
@@ -444,6 +446,40 @@ namespace MikroLab.App
             });
 
             _studio.HostSetFontScale(_settings.EditorFontScale);
+        }
+
+        /// <summary>
+        /// Checks GitHub for a newer release. The check runs in the background
+        /// and never blocks the studio.
+        /// </summary>
+        private async void CheckForUpdateAsync()
+        {
+            UpdateInfo info = await UpdateChecker.CheckAsync().ConfigureAwait(true);
+            if (info == null || !info.UpdateAvailable)
+                return;
+
+            string message = "Доступна новая версия MikroLab " + info.LatestVersion +
+                " (установлена " + info.CurrentVersion + ")." +
+                Environment.NewLine + Environment.NewLine +
+                "Открыть страницу релиза?";
+
+            if (MessageBox.Show(this, message, "Обновление MikroLab",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
+                return;
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = info.Url,
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                MessageBox.Show(this, "Не удалось открыть страницу: " + info.Url,
+                    "Обновление MikroLab", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void SwitchTo(Workspace workspace)

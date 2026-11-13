@@ -161,6 +161,7 @@ jobs:
           mkdir -p "$APP/MacOS" "$APP/Resources"
           cp "publish/${{ matrix.rid }}/MikroLab" "$APP/MacOS/MikroLab"
           cp LICENSE THIRD-PARTY-NOTICES.md README.md "$APP/Resources/"
+          cp assets/mikrolab.icns "$APP/Resources/"
           chmod +x "$APP/MacOS/MikroLab"
           cat > "$APP/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -174,6 +175,7 @@ jobs:
             <key>CFBundleShortVersionString</key><string>$VERSION</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleExecutable</key><string>MikroLab</string>
+          <key>CFBundleIconFile</key><string>mikrolab.icns</string>
             <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
             <key>LSMinimumSystemVersion</key><string>12.0</string>
             <key>NSHighResolutionCapable</key><true/>
@@ -246,7 +248,11 @@ jobs:
             автосборка и автодизассемблирование при открытии файла, тумблеры стенда,
             масштаб шрифта; настройки хранятся в профиле пользователя;
           - **CLI**: `--arch i8086|x64` для команд `assemble` и `run`, `--origin` для
-            адреса загрузки, а также `--workspace`, `--program` и `--run` для студии.
+            адреса загрузки, а также `--workspace`, `--program` и `--run` для студии;
+          - **Значок приложения** для Windows, Linux и macOS — по мотивам знака
+            в шапке студии;
+          - **Проверка обновлений** при старте: студия спрашивает GitHub о
+            свежем релизе и предлагает открыть его страницу.
 
           ### Сборки
 

@@ -106,7 +106,7 @@ namespace MikroLab.App
             cancel.Click += (sender, args) => { DialogResult = DialogResult.Cancel; Close(); };
 
             var reset = MakeButton("По умолчанию", 128);
-            reset.Click += (sender, args) => Load(new MikroLabSettings());
+            reset.Click += (sender, args) => LoadInto(new MikroLabSettings());
 
             buttons.Controls.Add(apply);
             buttons.Controls.Add(cancel);
@@ -115,7 +115,7 @@ namespace MikroLab.App
             Controls.Add(layout);
             Controls.Add(buttons);
 
-            Load(_settings);
+            LoadInto(_settings);
         }
 
         private static UiButton MakeButton(string text, int width)
@@ -157,7 +157,7 @@ namespace MikroLab.App
             layout.Controls.Add(control, 1, row);
         }
 
-        private void Load(MikroLabSettings settings)
+        private void LoadInto(MikroLabSettings settings)
         {
             _speed.Items.Clear();
             _speed.Items.AddRange(SpeedNames);

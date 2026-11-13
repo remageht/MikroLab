@@ -17,6 +17,8 @@
     <PublishTrimmed>false</PublishTrimmed>
     <!-- Compress the single-file payload: the bare exe drops from ~103 to ~47 MB. -->
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- значок приложения -->
+    <ApplicationIcon>..\..\assets\mikrolab.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
