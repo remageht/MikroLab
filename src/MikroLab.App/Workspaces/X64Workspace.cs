@@ -8,6 +8,7 @@ using MikroLab.Core.Assembler;
 using MikroLab.Core.Assembler.X64;
 using MikroLab.Core.Cpu.I8086;
 using MikroLab.Core.Cpu.X64;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Memory;
 using MikroLab.Presentation.Services;
 
@@ -164,9 +165,10 @@ namespace MikroLab.App.Workspaces
             UiButton step = Make("Шаг", StepOnce, 74);
             UiButton reset = Make("Сброс", ResetMachine, 74);
             UiButton disasm = Make("Дизассемблировать", ShowDisassembly, 132);
+            UiButton code = Make("Код → мнемоника", ShowMachineCode, 128);
 
             int x = 12;
-            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm })
+            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm, code })
             {
                 button.Location = new Point(x, 9);
                 x += button.Width + 8;
@@ -181,6 +183,7 @@ namespace MikroLab.App.Workspaces
             panel.Controls.Add(step);
             panel.Controls.Add(reset);
             panel.Controls.Add(disasm);
+            panel.Controls.Add(code);
             panel.Controls.Add(_statusLabel);
             return panel;
         }
@@ -503,6 +506,37 @@ message: db      'RAX = ', '$'
         /// Shows the machine code of the assembled program: the address, the
         /// bytes of every instruction and the source line.
         /// </summary>
+        /// <summary>
+        /// Decodes the machine code of the assembled program back into
+        /// instructions.
+        /// </summary>
+        private void ShowMachineCode()
+        {
+            if (_assembly == null)
+            {
+                AssembleProgram();
+                if (_assembly == null)
+                    return;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine();
+            builder.AppendLine("Машинный код (сплошной разбор):");
+            byte[] image = _assembly.Image;
+            int offset = 0;
+            while (offset < image.Length)
+            {
+                DecodedInstruction instruction = X64Disassembler.Decode(
+                    image, offset, _assembly.Origin + (ulong)offset);
+                builder.Append(instruction.Address.ToString("X8")).Append("h  ");
+                builder.Append(instruction.BytesText).Append(' ');
+                builder.Append(instruction.Text).AppendLine();
+                offset += Math.Max(1, instruction.Length);
+            }
+
+            _consoleView.AppendText(builder.ToString());
+        }
+
         private void ShowDisassembly()
         {
             if (_assembly == null)

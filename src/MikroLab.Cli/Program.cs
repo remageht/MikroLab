@@ -297,6 +297,12 @@ namespace MikroLab.Cli
 
         private static int DisassembleCommand(string[] args)
         {
+            if (IsX64(args))
+                return X86Commands.Disassemble(args, true);
+
+            if (IsI8086(args))
+                return X86Commands.Disassemble(args, false);
+
             string path = RequireSource(args, 1);
             byte[] memory = LoadMemoryImage(path, out ushort start);
 

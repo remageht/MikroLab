@@ -12,6 +12,7 @@ using MikroLab.Core.Assembler.I8086;
 using MikroLab.Core.Assembler.X64;
 using MikroLab.Core.Cpu.I8086;
 using MikroLab.Core.Cpu.X64;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Memory;
 using MikroLab.Studio.Controls;
 using MikroLab.Presentation.Services;
@@ -104,6 +105,7 @@ namespace MikroLab.Studio.Workspaces
             actions.Children.Add(MakeButton("Шаг", StepOnce));
             actions.Children.Add(MakeButton("Сброс", ResetMachine));
             actions.Children.Add(MakeButton("Дизассемблировать", ShowDisassembly));
+            actions.Children.Add(MakeButton("Код → мнемоника", ShowMachineCode));
             actions.Children.Add(_status);
             _status.VerticalAlignment = VerticalAlignment.Center;
             _status.Margin = new Thickness(12, 0, 0, 0);
@@ -490,6 +492,55 @@ T2:     db      0, 0, '$'
             {
                 _consoleView.Text += "Не удалось сохранить файл: " + failure.Message + Environment.NewLine;
             }
+        }
+
+        /// <summary>
+        /// Decodes the machine code of the assembled program back into
+        /// instructions.
+        /// </summary>
+        private void ShowMachineCode()
+        {
+            AssembleProgram();
+
+            StringBuilder builder = new StringBuilder();
+            builder.Append(Environment.NewLine).AppendLine("Машинный код (сплошной разбор):");
+
+            if (_kind == ArchitectureKind.X64)
+            {
+                if (_assembly64 == null)
+                    return;
+
+                byte[] image = _assembly64.Image;
+                int offset = 0;
+                while (offset < image.Length)
+                {
+                    DecodedInstruction instruction = X64Disassembler.Decode(
+                        image, offset, _assembly64.Origin + (ulong)offset);
+                    builder.Append(instruction.Address.ToString("X8")).Append("h  ");
+                    builder.Append(instruction.BytesText).Append(' ');
+                    builder.Append(instruction.Text).Append(Environment.NewLine);
+                    offset += Math.Max(1, instruction.Length);
+                }
+            }
+            else
+            {
+                if (_assembly == null)
+                    return;
+
+                byte[] image = _assembly.Image;
+                int offset = 0;
+                while (offset < image.Length)
+                {
+                    DecodedInstruction instruction = I8086Disassembler.Decode(
+                        image, offset, (ushort)(_assembly.Origin + offset));
+                    builder.Append(instruction.Address.ToString("X4")).Append("h  ");
+                    builder.Append(instruction.BytesText).Append(' ');
+                    builder.Append(instruction.Text).Append(Environment.NewLine);
+                    offset += Math.Max(1, instruction.Length);
+                }
+            }
+
+            AppendConsole(builder.ToString());
         }
 
         private void ShowDisassembly()

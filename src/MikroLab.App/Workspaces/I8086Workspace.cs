@@ -7,6 +7,7 @@ using MikroLab.App.Controls;
 using MikroLab.Core.Assembler;
 using MikroLab.Core.Assembler.I8086;
 using MikroLab.Core.Cpu.I8086;
+using MikroLab.Core.Debugging;
 using MikroLab.Core.Memory;
 using MikroLab.Presentation.Services;
 
@@ -159,9 +160,10 @@ namespace MikroLab.App.Workspaces
             var step = Make("Шаг", StepOnce, 74);
             var reset = Make("Сброс", ResetMachine, 74);
             var disasm = Make("Дизассемблировать", ShowDisassembly, 132);
+            var code = Make("Код → мнемоника", ShowMachineCode, 128);
 
             int x = 12;
-            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm })
+            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm, code })
             {
                 button.Location = new Point(x, 9);
                 x += button.Width + 8;
@@ -176,6 +178,7 @@ namespace MikroLab.App.Workspaces
             panel.Controls.Add(step);
             panel.Controls.Add(reset);
             panel.Controls.Add(disasm);
+            panel.Controls.Add(code);
             panel.Controls.Add(_statusLabel);
             return panel;
         }
@@ -506,6 +509,38 @@ T2:     db      0, 0, '$'
                 foreach (byte value in line.Bytes)
                     builder.Append(value.ToString("X2")).Append(' ');
                 builder.Append(' ').Append(line.Source.Trim()).AppendLine();
+            }
+
+            _consoleView.AppendText(builder.ToString());
+        }
+
+        /// <summary>
+        /// Decodes the machine code of the assembled program back into
+        /// instructions — the same job the disassembler of the laboratory bench
+        /// does.
+        /// </summary>
+        private void ShowMachineCode()
+        {
+            if (_assembly == null)
+            {
+                AssembleProgram();
+                if (_assembly == null)
+                    return;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine();
+            builder.AppendLine("Машинный код (сплошной разбор):");
+            byte[] image = _assembly.Image;
+            int offset = 0;
+            while (offset < image.Length)
+            {
+                DecodedInstruction instruction = I8086Disassembler.Decode(
+                    image, offset, (ushort)(_assembly.Origin + offset));
+                builder.Append(instruction.Address.ToString("X4")).Append("h  ");
+                builder.Append(instruction.BytesText).Append(' ');
+                builder.Append(instruction.Text).AppendLine();
+                offset += Math.Max(1, instruction.Length);
             }
 
             _consoleView.AppendText(builder.ToString());
