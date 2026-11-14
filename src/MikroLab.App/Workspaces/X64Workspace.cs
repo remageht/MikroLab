@@ -10,6 +10,7 @@ using MikroLab.Core.Cpu.I8086;
 using MikroLab.Core.Cpu.X64;
 using MikroLab.Core.Debugging;
 using MikroLab.Core.Memory;
+using MikroLab.Presentation;
 using MikroLab.Presentation.Services;
 
 namespace MikroLab.App.Workspaces
@@ -44,6 +45,8 @@ namespace MikroLab.App.Workspaces
         private readonly Label _statusLabel;
         private readonly SplitContainer _split;
 
+        private readonly BreakpointSet _breakpoints = new BreakpointSet();
+        private long _skipBreakpoint = -1;
         private X64Memory _memory = new X64Memory();
         private I8086Console _console = new I8086Console();
         private X64Cpu _cpu;
@@ -59,6 +62,7 @@ namespace MikroLab.App.Workspaces
             BackColor = AppTheme.Window;
 
             _editor = new CodeEditor { Dock = DockStyle.Fill };
+            _editor.BreakpointToggled += ToggleBreakpoint;
             _consoleView = new TextBox
             {
                 Multiline = true,
@@ -166,9 +170,10 @@ namespace MikroLab.App.Workspaces
             UiButton reset = Make("Сброс", ResetMachine, 74);
             UiButton disasm = Make("Дизассемблировать", ShowDisassembly, 132);
             UiButton code = Make("Код → мнемоника", ShowMachineCode, 128);
+            UiButton point = Make("Точка", ToggleCaretBreakpoint, 68);
 
             int x = 12;
-            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm, code })
+            foreach (UiButton button in new[] { open, save, assemble, run, step, reset, disasm, code, point })
             {
                 button.Location = new Point(x, 9);
                 x += button.Width + 8;
@@ -184,6 +189,7 @@ namespace MikroLab.App.Workspaces
             panel.Controls.Add(reset);
             panel.Controls.Add(disasm);
             panel.Controls.Add(code);
+            panel.Controls.Add(point);
             panel.Controls.Add(_statusLabel);
             return panel;
         }
@@ -386,7 +392,8 @@ message: db      'RAX = ', '$'
 
             _consoleView.AppendText("Собрано: " + result.Image.Length + " байт, начало " +
                 result.Origin.ToString("X") + "h" + Environment.NewLine);
-            _statusLabel.Text = "Собрано: " + result.Image.Length + " байт";
+            UpdateBreakpointAddresses();
+            _statusLabel.Text = "Собрано: " + result.Image.Length + " байт · точек: " + _breakpoints.Count;
             RefreshPanels();
         }
 
@@ -400,8 +407,35 @@ message: db      'RAX = ', '$'
             }
 
             int executed = 0;
-            while (executed < MaxSteps && _cpu.Step())
+            bool stopped = false;
+            ulong stopAddress = 0;
+
+            while (executed < MaxSteps)
+            {
+                ulong pc = _cpu.State.RIP;
+                if (pc == (ulong)_skipBreakpoint)
+                {
+                    // продолжение с места останова: текущую точку пропускаем один раз
+                    _skipBreakpoint = -1;
+                }
+                else if (_breakpoints.Contains(pc))
+                {
+                    stopped = true;
+                    stopAddress = pc;
+                    break;
+                }
+
+                if (!_cpu.Step())
+                    break;
                 executed++;
+            }
+
+            if (stopped)
+            {
+                _skipBreakpoint = (long)stopAddress;
+                _consoleView.AppendText("Останов на точке останова: " +
+                    stopAddress.ToString("X8") + "h" + Environment.NewLine);
+            }
 
             _consoleView.AppendText("Выполнено команд: " + executed + Environment.NewLine);
             string text = _cpu.Console.Output;
@@ -425,8 +459,48 @@ message: db      'RAX = ', '$'
             RefreshPanels();
         }
 
+        /// <summary>Marks or unmarks a breakpoint on the line of the caret.</summary>
+        private void ToggleCaretBreakpoint()
+        {
+            ToggleBreakpoint(_editor.CaretLine);
+        }
+
+        /// <summary>Marks or unmarks a breakpoint on an editor line.</summary>
+        private void ToggleBreakpoint(int line)
+        {
+            bool added = _breakpoints.ToggleLine(line);
+            _editor.SetBreakpointLines(_breakpoints.Lines);
+            UpdateBreakpointAddresses();
+            _statusLabel.Text = "Собрано: " + (_assembly != null ? _assembly.Image.Length : 0) +
+                " байт · точек: " + _breakpoints.Count;
+            string note = added ? "Точка останова · строка " : "Точка останова снята · строка ";
+            if (added && !_breakpoints.HasCode(line))
+                note = "Строка без машинного кода · точка останова не сработает · строка ";
+
+            _consoleView.AppendText(note + line + Environment.NewLine);
+        }
+
+        /// <summary>Maps the marked lines to the addresses of the last assembly.</summary>
+        private void UpdateBreakpointAddresses()
+        {
+            _breakpoints.MapAddresses(line =>
+            {
+                if (_assembly == null)
+                    return null;
+
+                foreach (X64ListingLine item in _assembly.Listing)
+                {
+                    if (item.HasAddress && item.LineNumber == line)
+                        return item.Offset;
+                }
+
+                return null;
+            });
+        }
+
         private void ResetMachine()
         {
+            _skipBreakpoint = -1;
             if (_assembly != null)
             {
                 _memory = new X64Memory();

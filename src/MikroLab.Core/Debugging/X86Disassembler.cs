@@ -101,8 +101,6 @@ namespace MikroLab.Core.Debugging
         private int _rm;
         private bool _registerOperand;
         private string _memory;
-        private bool _ripRelative;
-        private long _ripTarget;
 
         public X86Disassembler(byte[] code, int offset, ulong address, bool longMode)
         {
@@ -440,8 +438,6 @@ namespace MikroLab.Core.Debugging
 
             if (ripRelative)
             {
-                _ripRelative = true;
-                _ripTarget = unchecked((long)(CurrentAddress() + (ulong)displacement));
                 _memory = "[rip" + (displacement < 0 ? "-" : "+") +
                     ((ulong)Math.Abs(displacement)).ToString("X", CultureInfo.InvariantCulture) + "h]";
                 return;

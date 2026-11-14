@@ -14,6 +14,7 @@ using MikroLab.Core.Cpu.I8086;
 using MikroLab.Core.Cpu.X64;
 using MikroLab.Core.Debugging;
 using MikroLab.Core.Memory;
+using MikroLab.Presentation;
 using MikroLab.Studio.Controls;
 using MikroLab.Presentation.Services;
 using MikroLab.Studio.Services;
@@ -65,6 +66,10 @@ namespace MikroLab.Studio.Workspaces
         private I8086AssembleResult _assembly;
         private X64AssembleResult _assembly64;
         private string _filePath;
+        private readonly BreakpointSet _breakpoints = new BreakpointSet();
+        private long _skipBreakpoint = -1;
+        private string _assembledSource;
+        private int _assembledBytes;
 
         public ArchitectureWorkspace(ArchitectureKind kind, IAvaloniaFileService files)
         {
@@ -76,6 +81,7 @@ namespace MikroLab.Studio.Workspaces
             _cpu64 = new X64Cpu(_memory64, _console);
 
             _editor = new CodeEditor();
+            _editor.BreakpointToggled += ToggleBreakpoint;
             _consoleView = MakeReadOnlyBox();
             _consoleMain = MakeReadOnlyBox();
             _memoryView = MakeReadOnlyBox();
@@ -106,6 +112,7 @@ namespace MikroLab.Studio.Workspaces
             actions.Children.Add(MakeButton("Сброс", ResetMachine));
             actions.Children.Add(MakeButton("Дизассемблировать", ShowDisassembly));
             actions.Children.Add(MakeButton("Код → мнемоника", ShowMachineCode));
+            actions.Children.Add(MakeButton("Точка", ToggleCaretBreakpoint));
             actions.Children.Add(_status);
             _status.VerticalAlignment = VerticalAlignment.Center;
             _status.Margin = new Thickness(12, 0, 0, 0);
@@ -398,18 +405,47 @@ T2:     db      0, 0, '$'
                 _status.Text = "Собрано: " + result.Image.Length + " байт";
             }
 
+            _assembledSource = source;
+            _assembledBytes = _kind == ArchitectureKind.X64
+                ? (_assembly64 != null ? _assembly64.Image.Length : 0)
+                : (_assembly != null ? _assembly.Image.Length : 0);
+            UpdateBreakpointAddresses();
+            _status.Text = "Собрано: " + _assembledBytes + " байт · точек: " + _breakpoints.Count;
             RefreshPanels();
         }
 
         private void RunProgram()
         {
-            AssembleProgram();
+            // пересобираем только если текст программы изменился
+            if (_editor.Code != _assembledSource)
+                AssembleProgram();
 
             int executed = 0;
+            bool stopped = false;
+            ulong stopAddress = 0;
+
             if (_kind == ArchitectureKind.X64)
             {
-                while (executed < MaxSteps && _cpu64.Step())
+                while (executed < MaxSteps)
+                {
+                    ulong pc = _cpu64.State.RIP;
+                    if (pc == (ulong)_skipBreakpoint)
+                    {
+                        // продолжение с места останова: текущую точку пропускаем один раз
+                        _skipBreakpoint = -1;
+                    }
+                    else if (_breakpoints.Contains(pc))
+                    {
+                        stopped = true;
+                        stopAddress = pc;
+                        break;
+                    }
+
+                    if (!_cpu64.Step())
+                        break;
                     executed++;
+                }
+
                 string text = _cpu64.Console.Output;
                 if (!string.IsNullOrEmpty(text))
                     AppendConsole(text + Environment.NewLine);
@@ -418,11 +454,35 @@ T2:     db      0, 0, '$'
             }
             else
             {
-                while (executed < MaxSteps && _cpu.Step())
+                while (executed < MaxSteps)
+                {
+                    ushort pc = _cpu.State.IP;
+                    if (pc == (ushort)_skipBreakpoint)
+                    {
+                        _skipBreakpoint = -1;
+                    }
+                    else if (_breakpoints.Contains(pc))
+                    {
+                        stopped = true;
+                        stopAddress = pc;
+                        break;
+                    }
+
+                    if (!_cpu.Step())
+                        break;
                     executed++;
+                }
+
                 string text = _cpu.Console.Output;
                 if (!string.IsNullOrEmpty(text))
                     AppendConsole(text + Environment.NewLine);
+            }
+
+            if (stopped)
+            {
+                _skipBreakpoint = (long)stopAddress;
+                AppendConsole("Останов на точке останова: " +
+                    stopAddress.ToString(_kind == ArchitectureKind.X64 ? "X8" : "X4") + "h" + Environment.NewLine);
             }
 
             AppendConsole("Выполнено команд: " + executed + Environment.NewLine);
@@ -431,7 +491,8 @@ T2:     db      0, 0, '$'
 
         private void StepOnce()
         {
-            AssembleProgram();
+            if (_editor.Code != _assembledSource)
+                AssembleProgram();
             if (_kind == ArchitectureKind.X64)
                 _cpu64.Step();
             else
@@ -442,7 +503,60 @@ T2:     db      0, 0, '$'
         private void ResetMachine()
         {
             ClearConsole();
+            _skipBreakpoint = -1;
             AssembleProgram();
+        }
+
+        /// <summary>Marks or unmarks a breakpoint on the line of the caret.</summary>
+        private void ToggleCaretBreakpoint()
+        {
+            ToggleBreakpoint(_editor.CaretLine);
+        }
+
+        /// <summary>Marks or unmarks a breakpoint on an editor line.</summary>
+        private void ToggleBreakpoint(int line)
+        {
+            bool added = _breakpoints.ToggleLine(line);
+            _editor.SetBreakpointLines(_breakpoints.Lines);
+            UpdateBreakpointAddresses();
+            _status.Text = "Собрано: " + _assembledBytes + " байт · точек: " + _breakpoints.Count;
+            string note = added ? "Точка останова · строка " : "Точка останова снята · строка ";
+            if (added && !_breakpoints.HasCode(line))
+                note = "Строка без машинного кода · точка останова не сработает · строка ";
+
+            AppendConsole(note + line + Environment.NewLine);
+        }
+
+        /// <summary>Maps the marked lines to the addresses of the last assembly.</summary>
+        private void UpdateBreakpointAddresses()
+        {
+            _breakpoints.MapAddresses(line =>
+            {
+                if (_kind == ArchitectureKind.X64)
+                {
+                    if (_assembly64 == null)
+                        return null;
+
+                    foreach (X64ListingLine item in _assembly64.Listing)
+                    {
+                        if (item.HasAddress && item.LineNumber == line)
+                            return item.Offset;
+                    }
+
+                    return null;
+                }
+
+                if (_assembly == null)
+                    return null;
+
+                foreach (I8086ListingLine item in _assembly.Listing)
+                {
+                    if (item.HasAddress && item.LineNumber == line)
+                        return (ulong)item.Offset;
+                }
+
+                return null;
+            });
         }
 
         private async Task OpenFileAsync()
