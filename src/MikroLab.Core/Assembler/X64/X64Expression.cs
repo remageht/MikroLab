@@ -272,13 +272,30 @@ namespace MikroLab.Core.Assembler.X64
                     long symbolValue;
                     if (_symbols != null && _symbols.TryGetValue(name, out symbolValue))
                         return symbolValue;
-                    throw new FormatException("Неизвестный символ '" + name + "'");
+                    throw new FormatException("Неизвестный символ '" + name + "'" + KnownSymbols(_symbols));
                 }
 
                 throw new FormatException("Неожиданный символ '" + c + "' в выражении");
             }
 
-            private long ParseNumber()
+            /// <summary>
+        /// Lists the known symbols so a student immediately sees that the
+        /// label is simply missing in the data section.
+        /// </summary>
+        private static string KnownSymbols(IDictionary<string, long> symbols)
+        {
+            if (symbols == null || symbols.Count == 0)
+                return string.Empty;
+
+            var names = new List<string>(symbols.Keys);
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            if (names.Count > 8)
+                names.RemoveRange(8, names.Count - 8);
+
+            return " (известные символы: " + string.Join(", ", names) + ")";
+        }
+
+        private long ParseNumber()
             {
                 int start = _position;
                 while (_position < _text.Length)

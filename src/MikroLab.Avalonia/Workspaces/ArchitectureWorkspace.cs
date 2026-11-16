@@ -68,6 +68,7 @@ namespace MikroLab.Studio.Workspaces
         private string _filePath;
         private readonly BreakpointSet _breakpoints = new BreakpointSet();
         private long _skipBreakpoint = -1;
+        private bool _assemblyFailed;
         private string _assembledSource;
         private int _assembledBytes;
 
@@ -374,6 +375,7 @@ T2:     db      0, 0, '$'
                     if (result.Errors.Count > 0)
                         _editor.SetErrorLine(result.Errors[0].LineNumber);
                     _status.Text = "Ошибок: " + result.Errors.Count;
+                    _assemblyFailed = true;
                     return;
                 }
 
@@ -394,6 +396,7 @@ T2:     db      0, 0, '$'
                     if (result.Errors.Count > 0)
                         _editor.SetErrorLine(result.Errors[0].LineNumber);
                     _status.Text = "Ошибок: " + result.Errors.Count;
+                    _assemblyFailed = true;
                     return;
                 }
 
@@ -405,6 +408,7 @@ T2:     db      0, 0, '$'
                 _status.Text = "Собрано: " + result.Image.Length + " байт";
             }
 
+            _assemblyFailed = false;
             _assembledSource = source;
             _assembledBytes = _kind == ArchitectureKind.X64
                 ? (_assembly64 != null ? _assembly64.Image.Length : 0)
@@ -419,6 +423,13 @@ T2:     db      0, 0, '$'
             // пересобираем только если текст программы изменился
             if (_editor.Code != _assembledSource)
                 AssembleProgram();
+
+            if (_assemblyFailed)
+            {
+                AppendConsole("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
 
             int executed = 0;
             bool stopped = false;
@@ -493,6 +504,13 @@ T2:     db      0, 0, '$'
         {
             if (_editor.Code != _assembledSource)
                 AssembleProgram();
+
+            if (_assemblyFailed)
+            {
+                AppendConsole("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
             if (_kind == ArchitectureKind.X64)
                 _cpu64.Step();
             else

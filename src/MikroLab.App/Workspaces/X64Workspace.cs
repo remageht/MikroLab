@@ -47,6 +47,7 @@ namespace MikroLab.App.Workspaces
 
         private readonly BreakpointSet _breakpoints = new BreakpointSet();
         private long _skipBreakpoint = -1;
+        private bool _assemblyFailed;
         private X64Memory _memory = new X64Memory();
         private I8086Console _console = new I8086Console();
         private X64Cpu _cpu;
@@ -381,8 +382,11 @@ message: db      'RAX = ', '$'
                 if (result.Errors.Count > 0)
                     _editor.SetErrorLine(result.Errors[0].LineNumber);
                 _statusLabel.Text = "Ошибок: " + result.Errors.Count;
+                _assemblyFailed = true;
                 return;
             }
+
+            _assemblyFailed = false;
 
             _assembly = result;
             _memory = new X64Memory();
@@ -399,6 +403,13 @@ message: db      'RAX = ', '$'
 
         private void RunProgram()
         {
+            if (_assemblyFailed)
+            {
+                _consoleView.AppendText("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
+
             if (_assembly == null)
             {
                 AssembleProgram();
@@ -449,6 +460,13 @@ message: db      'RAX = ', '$'
 
         private void StepOnce()
         {
+            if (_assemblyFailed)
+            {
+                _consoleView.AppendText("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
+
             if (_assembly == null)
             {
                 AssembleProgram();

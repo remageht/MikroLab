@@ -693,9 +693,9 @@ namespace MikroLab.Tests
 
         public static void Test_Error_Undefined_Symbol()
         {
-            AssertFails("JMP nowhere", 1, "Undefined symbol");
-            AssertFails("DB missing", 1, "Undefined symbol");
-            AssertFails("MVI A,unknown", 1, "Undefined symbol");
+            AssertFails("JMP nowhere", 1, "Неизвестный символ");
+            AssertFails("DB missing", 1, "Неизвестный символ");
+            AssertFails("MVI A,unknown", 1, "Неизвестный символ");
             AssertFails("X EQU Y\nDB X", 1, "Unable to resolve EQU");
             Console.WriteLine("  [PASS] Test_Error_Undefined_Symbol");
         }

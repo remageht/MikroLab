@@ -654,8 +654,8 @@ namespace MikroLab.Core.Assembler.I8086
             {
                 EmitSegmentPrefix(source, output);
                 output.Write(0xA1);
-                WriteDisplacement16(output, source, symbols, reportErrors);
-                return null;
+                string moffsError = WriteDisplacement16(output, source, symbols, reportErrors);
+                return moffsError;
             }
 
             if (destination.Type == I8086OperandType.Register8 && source.Type == I8086OperandType.Memory
@@ -663,8 +663,8 @@ namespace MikroLab.Core.Assembler.I8086
             {
                 EmitSegmentPrefix(source, output);
                 output.Write(0xA0);
-                WriteDisplacement16(output, source, symbols, reportErrors);
-                return null;
+                string moffsError = WriteDisplacement16(output, source, symbols, reportErrors);
+                return moffsError;
             }
 
             if (destination.Type == I8086OperandType.Memory && source.Type == I8086OperandType.Register16
@@ -672,8 +672,8 @@ namespace MikroLab.Core.Assembler.I8086
             {
                 EmitSegmentPrefix(destination, output);
                 output.Write(0xA3);
-                WriteDisplacement16(output, destination, symbols, reportErrors);
-                return null;
+                string moffsError = WriteDisplacement16(output, destination, symbols, reportErrors);
+                return moffsError;
             }
 
             if (destination.Type == I8086OperandType.Memory && source.Type == I8086OperandType.Register8
@@ -681,8 +681,8 @@ namespace MikroLab.Core.Assembler.I8086
             {
                 EmitSegmentPrefix(destination, output);
                 output.Write(0xA2);
-                WriteDisplacement16(output, destination, symbols, reportErrors);
-                return null;
+                string moffsError = WriteDisplacement16(output, destination, symbols, reportErrors);
+                return moffsError;
             }
 
             if (destination.Type == I8086OperandType.Register8 && source.Type == I8086OperandType.Register8)
@@ -787,7 +787,12 @@ namespace MikroLab.Core.Assembler.I8086
             return reportErrors ? "неподдерживаемая комбинация операндов MOV" : null;
         }
 
-        private static void WriteDisplacement16(
+        /// <summary>
+        /// Writes the 16-bit displacement of the short moffs forms. An
+        /// undefined symbol must not pass silently: the address would be
+        /// encoded as zero.
+        /// </summary>
+        private static string WriteDisplacement16(
             MemoryStreamHelper output,
             I8086Operand operand,
             Dictionary<string, ushort> symbols,
@@ -801,15 +806,16 @@ namespace MikroLab.Core.Assembler.I8086
             else
             {
                 string evalError;
-                if (!ExpressionEvaluator.TryEvaluate(operand.Displacement ?? "0", symbols, 0, out disp, out evalError)
-                    && reportErrors)
+                if (!ExpressionEvaluator.TryEvaluate(operand.Displacement ?? "0", symbols, 0, out disp, out evalError))
                 {
-                    // the layout pass reports the error later
+                    if (reportErrors)
+                        return evalError;
                 }
             }
 
             output.Write((byte)(disp & 0xFF));
             output.Write((byte)((disp >> 8) & 0xFF));
+            return null;
         }
 
         private static string EmitLea(

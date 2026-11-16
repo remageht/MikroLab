@@ -45,6 +45,7 @@ namespace MikroLab.App.Workspaces
         private string _filePath;
         private readonly BreakpointSet _breakpoints = new BreakpointSet();
         private int _skipBreakpoint = -1;
+        private bool _assemblyFailed;
 
         public I8086Workspace(IFileDialogService files)
         {
@@ -366,8 +367,11 @@ T2:     db      0, 0, '$'
                 if (result.Errors.Count > 0)
                     _editor.SetErrorLine(result.Errors[0].LineNumber);
                 _statusLabel.Text = "Ошибок: " + result.Errors.Count;
+                _assemblyFailed = true;
                 return;
             }
+
+            _assemblyFailed = false;
 
             _assembly = result;
             _memory = new I8086Memory();
@@ -384,6 +388,13 @@ T2:     db      0, 0, '$'
 
         private void RunProgram()
         {
+            if (_assemblyFailed)
+            {
+                _consoleView.AppendText("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
+
             if (_assembly == null)
             {
                 AssembleProgram();
@@ -432,6 +443,13 @@ T2:     db      0, 0, '$'
 
         private void StepOnce()
         {
+            if (_assemblyFailed)
+            {
+                _consoleView.AppendText("Сборка не удалась — исправьте ошибки и нажмите «Собрать»." +
+                    Environment.NewLine);
+                return;
+            }
+
             if (_assembly == null)
             {
                 AssembleProgram();
