@@ -46,6 +46,7 @@ namespace MikroLab.Studio.Controls
         private readonly DispatcherTimer _blinkTimer;
 
         private string _text = string.Empty;
+        private double _fontScale = 1.0;
         private int _caret;
         private int _selectionAnchor = -1;
         private int _scrollLine;
@@ -88,6 +89,12 @@ namespace MikroLab.Studio.Controls
         public event Action<int> BreakpointToggled;
 
         private readonly record struct EditSnapshot(string Text, int Caret);
+
+        /// <summary>Scales the editor font; 100 keeps the standard size.</summary>
+        public void SetFontScale(int percent)
+        {
+            _fontScale = Math.Max(0.7, Math.Min(1.8, percent / 100.0));
+        }
 
         public string Code
         {
@@ -199,7 +206,7 @@ namespace MikroLab.Studio.Controls
 
         private void MeasureCharacter()
         {
-            FormattedText probe = AppTheme.MakeText("0000000000", AppTheme.MonoFace, AppTheme.MonoSize, AppTheme.Brush(AppTheme.Text));
+            FormattedText probe = AppTheme.MakeText("0000000000", AppTheme.MonoFace, AppTheme.MonoSize * _fontScale, AppTheme.Brush(AppTheme.Text));
             _charWidth = Math.Max(6, probe.Width / 10.0);
         }
 
@@ -708,7 +715,7 @@ namespace MikroLab.Studio.Controls
             {
                 if (i < text.Length && colors[i] == colors[runStart]) continue;
                 string run = text.Substring(runStart, i - runStart);
-                FormattedText formatted = AppTheme.MakeText(run, AppTheme.MonoFace, AppTheme.MonoSize, AppTheme.Brush(colors[runStart]));
+                FormattedText formatted = AppTheme.MakeText(run, AppTheme.MonoFace, AppTheme.MonoSize * _fontScale, AppTheme.Brush(colors[runStart]));
                 context.DrawText(formatted, new Point(x + runStart * _charWidth, y));
                 runStart = i;
             }

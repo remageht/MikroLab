@@ -18,13 +18,19 @@ namespace MikroLab.App
             AppDomain.CurrentDomain.UnhandledException += (sender, eventArgs) => ReportFatal(eventArgs.ExceptionObject as Exception);
 
             string captureDirectory = null;
+            bool showSettings = false;
             int sample = 0;
             string workspace = "studio";
+            string program = null;
+            bool run = false;
 
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
                 {
+                    case "--settings":
+                        showSettings = true;
+                        break;
                     case "--capture":
                         captureDirectory = i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)
                             ? args[++i]
@@ -43,13 +49,54 @@ namespace MikroLab.App
                             workspace = args[++i];
                         }
                         break;
+                    case "--program":
+                        if (i + 1 < args.Length)
+                        {
+                            program = args[++i];
+                        }
+                        break;
+                    case "--run":
+                        run = true;
+                        break;
                 }
             }
 
             var form = new MainForm();
+            if (showSettings)
+            {
+                form.Shown += (sender, args) => form.ShowSettings();
+            }
             if (captureDirectory != null)
             {
                 form.Shown += (sender, eventArgs) => form.BeginCapture(captureDirectory, sample, workspace);
+            }
+            else if (!string.Equals(workspace, "studio", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrEmpty(program))
+            {
+                form.Shown += (sender, eventArgs) =>
+                {
+                    form.SelectWorkspace(workspace);
+
+                    bool x64 = string.Equals(workspace, "x64", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(workspace, "x86-64", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(workspace, "amd64", StringComparison.OrdinalIgnoreCase);
+
+                    if (!string.IsNullOrEmpty(program))
+                    {
+                        if (x64)
+                            form.LoadX64Program(program);
+                        else
+                            form.LoadI8086Program(program);
+                    }
+
+                    if (run)
+                    {
+                        if (x64)
+                            form.RunX64Program();
+                        else
+                            form.RunI8086Program();
+                    }
+                };
             }
 
             Application.Run(form);

@@ -191,6 +191,23 @@ namespace MikroLab.Core.Assembler
             }
         }
 
+        /// <summary>
+        /// Lists the known symbols so a student immediately sees that the
+        /// label is simply missing in the data section.
+        /// </summary>
+        private static string KnownSymbols(IReadOnlyDictionary<string, ushort> symbols)
+        {
+            if (symbols == null || symbols.Count == 0)
+                return string.Empty;
+
+            var names = new List<string>(symbols.Keys);
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            if (names.Count > 8)
+                names.RemoveRange(8, names.Count - 8);
+
+            return " (известные символы: " + string.Join(", ", names) + ")";
+        }
+
         private sealed class Parser
         {
             private readonly string _text;
@@ -424,7 +441,7 @@ namespace MikroLab.Core.Assembler
                     if (_symbols != null && _symbols.TryGetValue(name, out symbolValue))
                         return symbolValue;
 
-                    throw new FormatException("Undefined symbol '" + name + "'");
+                    throw new FormatException("Неизвестный символ '" + name + "'" + KnownSymbols(_symbols));
                 }
 
                 throw new FormatException("Unexpected character '" + c + "' in expression");

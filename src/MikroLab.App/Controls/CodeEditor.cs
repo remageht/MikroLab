@@ -286,6 +286,13 @@ namespace MikroLab.App.Controls
             Controls.Add(_layout);
         }
 
+        /// <summary>Scales the editor font; 100 keeps the standard size.</summary>
+        public void SetFontScale(int percent)
+        {
+            float scale = Math.Max(0.7f, Math.Min(1.8f, percent / 100f));
+            Font = new Font(AppTheme.MonoFont.FontFamily, AppTheme.MonoFont.Size * scale);
+        }
+
         public string Code
         {
             get => _text.Text;

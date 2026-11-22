@@ -895,6 +895,7 @@ namespace MikroLab.App.Workspaces
         public void HostRunTo(ushort address) => RunToAddress();
         public void HostShowDebugPoints() => ShowDebugPoints();
         public void HostSelectInspector(int index) => SelectInspector(index);
+        public void HostSetFontScale(int percent) => _editor.SetFontScale(percent);
         public void HostNew() => NewDocument();
         public void HostOpen() => OpenDocument();
         public void HostSave() => SaveDocument();

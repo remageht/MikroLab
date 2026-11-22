@@ -20,6 +20,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="..\..\assets\mikrolab-icon.png">
+      <Link>Assets\mikrolab-icon.png</Link>
+    </AvaloniaResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MikroLab.Core\MikroLab.Core.csproj" />
     <ProjectReference Include="..\MikroLab.Presentation\MikroLab.Presentation.csproj" />
   </ItemGroup>

@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using MikroLab.Core.Machine;
 using MikroLab.Presentation;
@@ -33,7 +34,9 @@ namespace MikroLab.Studio
         private enum Workspace
         {
             Studio,
-            Laboratory
+            Laboratory,
+            I8086,
+            X64
         }
 
         private static readonly string[] SpeedLabels =
@@ -58,10 +61,17 @@ namespace MikroLab.Studio
         private readonly IScreenshotService _screenshots;
         private readonly StudioWorkspace _studio;
         private readonly LaboratoryWorkspace _laboratory;
+        private readonly ArchitectureWorkspace _i8086;
+        private readonly ArchitectureWorkspace _x64;
         private readonly Grid _content;
         private readonly UiButton _studioTab;
         private readonly UiButton _labTab;
+        private readonly UiButton _i8086Tab;
+        private readonly UiButton _x64Tab;
+        private readonly TextBlock _tagline;
         private readonly UiButton _fileButton;
+        private readonly UiButton _settingsButton;
+        private readonly MikroLabSettings _settings = MikroLabSettings.Load();
         private readonly ThemedDropDown _speedBox;
         private readonly DispatcherTimer _uiTimer;
 
@@ -86,9 +96,13 @@ namespace MikroLab.Studio
         private int _captureSample;
         private string _captureWorkspace;
 
+        // Smoke test state.
+        private Timer _smokeWatchdog;
+
         public MainWindow()
         {
             Title = "MikroLab — КР580ВМ80А";
+            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://MikroLab/Assets/mikrolab-icon.png")));
             Width = 1420;
             Height = 880;
             MinWidth = 1120;
@@ -143,9 +157,10 @@ namespace MikroLab.Studio
                 VerticalAlignment = VerticalAlignment.Center
             };
             brandText.Children.Add(AppTheme.Label("MikroLab", AppTheme.Text, AppTheme.BrandSize, true));
-            brandText.Children.Add(AppTheme.Label(
-                "КР580ВМ80А · Intel 8080 · учебный эмулятор",
-                AppTheme.TextMuted, AppTheme.SmallSize));
+            _tagline = AppTheme.Label(
+                WorkspaceTagline(Workspace.Studio),
+                AppTheme.TextMuted, AppTheme.SmallSize);
+            brandText.Children.Add(_tagline);
             brandPanel.Children.Add(brandText);
             Grid.SetColumn(brandText, 1);
             headerLayout.Children.Add(brandPanel);
@@ -198,10 +213,32 @@ namespace MikroLab.Studio
                 FontSize = AppTheme.SmallSize,
                 CornerRadius = 7
             };
+            _i8086Tab = new UiButton
+            {
+                Text = "i8086",
+                Kind = UiButtonKind.Ghost,
+                Width = 92,
+                Height = 32,
+                FontSize = AppTheme.SmallSize,
+                CornerRadius = 7
+            };
+            _x64Tab = new UiButton
+            {
+                Text = "x64",
+                Kind = UiButtonKind.Ghost,
+                Width = 78,
+                Height = 32,
+                FontSize = AppTheme.SmallSize,
+                CornerRadius = 7
+            };
             _studioTab.Click += () => SwitchTo(Workspace.Studio);
             _labTab.Click += () => SwitchTo(Workspace.Laboratory);
+            _i8086Tab.Click += () => SwitchTo(Workspace.I8086);
+            _x64Tab.Click += () => SwitchTo(Workspace.X64);
             switchLayout.Children.Add(_studioTab);
             switchLayout.Children.Add(_labTab);
+            switchLayout.Children.Add(_i8086Tab);
+            switchLayout.Children.Add(_x64Tab);
             switchBar.Child = switchLayout;
             headerLayout.Children.Add(switchBar);
             Grid.SetColumn(switchBar, 2);
@@ -236,6 +273,21 @@ namespace MikroLab.Studio
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(10, 0, 0, 0)
             };
+            _settingsButton = new UiButton
+            {
+                Text = "Настройки",
+                Kind = UiButtonKind.Ghost,
+                Width = 100,
+                Height = 32,
+                FontSize = AppTheme.SmallSize,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _settingsButton.Click += () => _ = ShowSettingsAsync();
+            ToolTip.SetTip(_settingsButton,
+                "Скорость, автосборка, адрес загрузки, тумблеры стенда");
+            headerLayout.Children.Add(_settingsButton);
+            Grid.SetColumn(_settingsButton, 5);
+
             about.Click += ShowHelp;
             ToolTip.SetTip(about, "Горячие клавиши, возможности и лицензия");
             headerLayout.Children.Add(about);
@@ -253,11 +305,15 @@ namespace MikroLab.Studio
 
             _studio = new StudioWorkspace(_host, _files);
             _laboratory = new LaboratoryWorkspace(_host);
+            _i8086 = new ArchitectureWorkspace(ArchitectureKind.I8086, _files);
+            _x64 = new ArchitectureWorkspace(ArchitectureKind.X64, _files);
             _studio.DocumentTitleChanged += UpdateTitle;
             _laboratory.OpenInStudioRequested += OpenLabInStudio;
 
             _content.Children.Add(_studio);
             _content.Children.Add(_laboratory);
+            _content.Children.Add(_i8086);
+            _content.Children.Add(_x64);
             root.Children.Add(_content);
             Grid.SetRow(_content, 1);
 
@@ -326,6 +382,8 @@ namespace MikroLab.Studio
             SwitchTo(Workspace.Studio);
             UpdateTitle();
             PumpUi();
+
+            Opened += async (sender, args) => await CheckForUpdateAsync();
         }
 
         public StudioWorkspace Studio => _studio;
@@ -341,20 +399,125 @@ namespace MikroLab.Studio
             return label;
         }
 
+        /// <summary>Opens the settings dialog and applies the chosen values.</summary>
+        private async Task ShowSettingsAsync()
+        {
+            bool applied = await SettingsDialog.ShowAsync(this, _settings);
+            if (!applied)
+                return;
+
+            ApplySettings();
+            _studio.Output.Log("Настройки применены");
+        }
+
+        /// <summary>
+        /// Checks GitHub for a newer release. The check runs in the background
+        /// and never blocks the studio.
+        /// </summary>
+        private async Task CheckForUpdateAsync()
+        {
+            UpdateInfo info = await UpdateChecker.CheckAsync().ConfigureAwait(true);
+            if (info == null || !info.UpdateAvailable)
+                return;
+
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                await UpdateDialog.ShowAsync(this, info);
+            });
+        }
+
+        /// <summary>Applies the stored settings to the machine and the studio.</summary>
+        private void ApplySettings()
+        {
+            int speedIndex = Math.Max(0, Math.Min(SpeedValues.Length - 1, _settings.SpeedIndex));
+            if (_speedBox.SelectedIndex != speedIndex)
+                _speedBox.SelectIndex(speedIndex);
+            else
+                OnSpeedSelected(speedIndex);
+
+            _host.Session.LogExecution = _settings.TraceEveryInstruction;
+
+            _host.WithMachine(machine =>
+            {
+                machine.Ppi.Tumbler1 = _settings.Tumbler1;
+                machine.Ppi.Tumbler2 = _settings.Tumbler2;
+                machine.Ppi.Tumbler3 = _settings.Tumbler3;
+            });
+
+            _studio.HostSetFontScale(_settings.EditorFontScale);
+        }
+
         private void SwitchTo(Workspace workspace)
         {
             _workspace = workspace;
             bool studio = workspace == Workspace.Studio;
+            bool laboratory = workspace == Workspace.Laboratory;
+            bool i8086 = workspace == Workspace.I8086;
+            bool x64 = workspace == Workspace.X64;
 
             _studio.IsVisible = studio;
-            _laboratory.IsVisible = !studio;
+            _laboratory.IsVisible = laboratory;
+            _i8086.IsVisible = i8086;
+            _x64.IsVisible = x64;
 
             _studioTab.Active = studio;
-            _labTab.Active = !studio;
-            _workspaceLabel.Text = studio ? "Студия" : "Лаборатория";
+            _labTab.Active = laboratory;
+            _i8086Tab.Active = i8086;
+            _x64Tab.Active = x64;
+            _workspaceLabel.Text = studio ? "Студия"
+                : laboratory ? "Лаборатория"
+                : i8086 ? "Intel 8086" : "Intel x86-64";
+            _tagline.Text = WorkspaceTagline(workspace);
 
             PumpUi();
             if (studio) _studio.Editor.FocusEditor();
+        }
+
+        /// <summary>Switches to a workspace by name: studio, laboratory, i8086 or x64.</summary>
+        public void SelectWorkspace(string name)
+        {
+            if (string.Equals(name, "i8086", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "8086", StringComparison.OrdinalIgnoreCase))
+            {
+                SwitchTo(Workspace.I8086);
+                return;
+            }
+
+            if (string.Equals(name, "x64", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "x86-64", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "amd64", StringComparison.OrdinalIgnoreCase))
+            {
+                SwitchTo(Workspace.X64);
+                return;
+            }
+
+            if (string.Equals(name, "lab", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "laboratory", StringComparison.OrdinalIgnoreCase))
+            {
+                SwitchTo(Workspace.Laboratory);
+                return;
+            }
+
+            SwitchTo(Workspace.Studio);
+        }
+
+        /// <summary>
+        /// Subtitle under the product name: it follows the selected workspace so
+        /// the current architecture is always visible.
+        /// </summary>
+        private static string WorkspaceTagline(Workspace workspace)
+        {
+            switch (workspace)
+            {
+                case Workspace.Laboratory:
+                    return "Лабораторные работы 1–5 · КР580ВМ80А · Intel 8080";
+                case Workspace.I8086:
+                    return "Intel 8086 · 16-разрядный реальный режим · DOS-сервисы";
+                case Workspace.X64:
+                    return "Intel x86-64 · long mode · 64-разрядные регистры";
+                default:
+                    return "КР580ВМ80А · Intel 8080 · учебный эмулятор";
+            }
         }
 
         private void OpenLabInStudio(string sampleName)
@@ -973,6 +1136,38 @@ namespace MikroLab.Studio
         }
 
         // ================================================================== screenshot harness
+
+        /// <summary>
+        /// Opens every workspace once, lets the first frame appear and exits
+        /// with the code 0. CI uses it to prove that the published build really
+        /// starts on Linux and macOS. The watchdog guarantees that a broken
+        /// window never hangs the build.
+        /// </summary>
+        public void RunSmoke(string workspace)
+        {
+            _smokeWatchdog = new Timer(
+                state => Environment.Exit(4),
+                null,
+                TimeSpan.FromSeconds(60),
+                Timeout.InfiniteTimeSpan);
+
+            foreach (Workspace target in new[] { Workspace.Studio, Workspace.Laboratory, Workspace.I8086, Workspace.X64 })
+            {
+                SwitchTo(target);
+                PumpUi();
+            }
+
+            SelectWorkspace(string.IsNullOrEmpty(workspace) ? "studio" : workspace);
+            PumpUi();
+
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+            timer.Tick += (sender, args) =>
+            {
+                timer.Stop();
+                Environment.Exit(0);
+            };
+            timer.Start();
+        }
 
         /// <summary>
         /// Drives the app through a fixed set of scenes and writes PNG files.

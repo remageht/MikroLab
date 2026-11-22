@@ -813,6 +813,7 @@ namespace MikroLab.Studio.Workspaces
         public void HostStepBack() => StepBackProgram();
         public void HostRunTo(ushort address) => _host.RunTo(address);
         public Task HostShowDebugPointsAsync() => DebugPointsDialog.ShowAsync(Owner, _host);
+        public void HostSetFontScale(int percent) => _editor.SetFontScale(percent);
         public void HostSelectInspector(int index) => SelectInspector(index);
         public Task HostNewAsync() { NewDocumentAsync(); return Task.CompletedTask; }
         public Task HostOpenAsync() { OpenDocumentAsync(); return Task.CompletedTask; }

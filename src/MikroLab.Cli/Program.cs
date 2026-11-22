@@ -92,6 +92,13 @@ namespace MikroLab.Cli
         {
             string sourcePath = RequireSource(args, 1);
             string output = GetOption(args, "-o") ?? GetOption(args, "--output");
+
+            if (IsX64(args))
+                return X64Commands.Assemble(args, sourcePath, output);
+
+            if (IsI8086(args))
+                return I8086Commands.Assemble(args, sourcePath, output);
+
             string source = File.ReadAllText(sourcePath);
             AssembleResult result = I8080Assembler.Assemble(source, DefaultOrigin);
 
@@ -132,7 +139,15 @@ namespace MikroLab.Cli
         private static int RunCommand(string[] args)
         {
             CpuProfile profile = GetProfileOption(args);
-            LoadedProgram program = LoadProgram(RequireSource(args, 1), profile);
+            string sourcePath = RequireSource(args, 1);
+
+            if (IsX64(args))
+                return X64Commands.Run(args, sourcePath);
+
+            if (IsI8086(args))
+                return I8086Commands.Run(args, sourcePath);
+
+            LoadedProgram program = LoadProgram(sourcePath, profile);
             int maxSteps = GetIntOption(args, "--steps", 1000000);
             ulong maxCycles = GetULongOption(args, "--max-cycles", 0);
             bool trace = HasFlag(args, "--trace");
@@ -282,6 +297,12 @@ namespace MikroLab.Cli
 
         private static int DisassembleCommand(string[] args)
         {
+            if (IsX64(args))
+                return X86Commands.Disassemble(args, true);
+
+            if (IsI8086(args))
+                return X86Commands.Disassemble(args, false);
+
             string path = RequireSource(args, 1);
             byte[] memory = LoadMemoryImage(path, out ushort start);
 
@@ -878,8 +899,36 @@ namespace MikroLab.Cli
 
         // ------------------------------------------------------------------ options
 
-        private static bool IsHelp(string value)
+        /// <summary>True when the Intel 8086 architecture was requested.</summary>
+        private static bool IsI8086(string[] args)
         {
+            string arch = ArchitectureOption(args);
+            if (string.IsNullOrEmpty(arch))
+                return false;
+
+            return arch.Equals("i8086", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("8086", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True when the x86-64 architecture was requested.</summary>
+        private static bool IsX64(string[] args)
+        {
+            string arch = ArchitectureOption(args);
+            if (string.IsNullOrEmpty(arch))
+                return false;
+
+            return arch.Equals("x64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("x86-64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("x86_64", StringComparison.OrdinalIgnoreCase)
+                || arch.Equals("amd64", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ArchitectureOption(string[] args)
+        {
+            return GetOption(args, "--arch") ?? GetOption(args, "--architecture");
+        }
+
+        private static bool IsHelp(string value)        {
             return value == "-h" || value == "--help" || value == "help" || value == "/?";
         }
 
